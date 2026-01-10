@@ -1,0 +1,556 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+    color: #333;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+header {
+    background: white;
+    padding: 30px;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+header h1 {
+    font-size: 2.5em;
+    margin-bottom: 20px;
+    color: #667eea;
+}
+
+.date-selector {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Main buttons in header - unified style */
+.main-btn {
+    padding: 12px 24px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+}
+
+.main-btn:hover:not(:disabled) {
+    background: #5568d3;
+    transform: translateY(-2px);
+}
+
+.main-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.main-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+/* Legacy secondary-btn for backwards compatibility */
+.secondary-btn {
+    padding: 10px 20px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+}
+
+.secondary-btn:hover:not(:disabled) {
+    background: #218838;
+    transform: translateY(-2px);
+}
+
+.secondary-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.action-btn {
+    padding: 10px 20px;
+    background: #17a2b8;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+    margin-right: 10px;
+}
+
+.action-btn:hover:not(:disabled) {
+    background: #138496;
+    transform: translateY(-2px);
+}
+
+.action-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.actions-section {
+    margin: 20px 0;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.date-selector label {
+    font-weight: 600;
+    color: #555;
+}
+
+.date-selector input {
+    padding: 10px 15px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: border-color 0.3s;
+}
+
+.date-selector input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+#load-btn {
+    padding: 10px 30px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+}
+
+#load-btn:hover {
+    background: #5568d3;
+    transform: translateY(-2px);
+}
+
+#load-btn:active {
+    transform: translateY(0);
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #667eea;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.error {
+    background: #fee;
+    color: #c33;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    border-left: 4px solid #c33;
+}
+
+.hidden {
+    display: none;
+}
+
+.games-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));
+    gap: 30px;
+}
+
+.game-card {
+    background: white;
+    border-radius: 15px;
+    padding: 25px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.game-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #eee;
+}
+
+.game-info {
+    flex: 1;
+}
+
+.game-date-time {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 10px;
+}
+
+.teams {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.team {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+}
+
+.team-logo {
+    width: 50px;
+    height: 50px;
+    object-fit: contain;
+}
+
+.team-name {
+    font-weight: 600;
+    font-size: 1.1em;
+}
+
+.vs {
+    font-weight: bold;
+    color: #667eea;
+    font-size: 1.2em;
+}
+
+.lineups-section {
+    margin-top: 25px;
+}
+
+.lineups-section h3 {
+    color: #667eea;
+    margin-bottom: 20px;
+    font-size: 1.3em;
+}
+
+.team-lineup {
+    margin-bottom: 30px;
+}
+
+.team-lineup-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.team-lineup-header .team-logo {
+    width: 40px;
+    height: 40px;
+}
+
+.team-lineup-header .team-name {
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.positions-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 15px;
+}
+
+.position-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+    text-align: center;
+    transition: background 0.3s;
+}
+
+.position-card:hover {
+    background: #e9ecef;
+}
+
+.position-label {
+    font-size: 0.8em;
+    color: #666;
+    font-weight: 600;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.player-photo {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin: 0 auto 10px;
+    border: 3px solid #667eea;
+    background: #ddd;
+}
+
+.player-name {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #333;
+    margin-bottom: 5px;
+}
+
+.player-id {
+    font-size: 0.75em;
+    color: #999;
+}
+
+.confirmed-badge {
+    display: inline-block;
+    background: #28a745;
+    color: white;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.7em;
+    margin-top: 5px;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.7em;
+    font-weight: 600;
+    margin-top: 5px;
+    margin-right: 5px;
+}
+
+.status-badge.starter {
+    background: #667eea;
+    color: white;
+}
+
+.status-badge.bench {
+    background: #ffc107;
+    color: #333;
+}
+
+.no-lineup {
+    text-align: center;
+    color: #999;
+    padding: 20px;
+    font-style: italic;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.empty-state h2 {
+    color: #667eea;
+    margin-bottom: 10px;
+}
+
+.empty-state p {
+    color: #666;
+}
+
+.odds-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.odds-btn {
+    width: 100%;
+    padding: 12px 20px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s, transform 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.odds-btn:hover:not(:disabled) {
+    background: #218838;
+    transform: translateY(-2px);
+}
+
+.odds-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.odds-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+}
+
+.btn-loading {
+    display: inline-block;
+}
+
+.odds-container {
+    margin-top: 15px;
+}
+
+.odds-error {
+    color: #c33;
+    padding: 10px;
+    background: #fee;
+    border-radius: 5px;
+    text-align: center;
+}
+
+.player-odds-container {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+}
+
+.odds-line {
+    margin-bottom: 10px;
+    padding: 10px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+}
+
+.odds-line-header {
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.odds-points {
+    font-weight: 700;
+    color: #333;
+    font-size: 0.95em;
+}
+
+.odds-line-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.odds-line-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.odds-type {
+    font-weight: 600;
+    color: #667eea;
+    font-size: 0.85em;
+    min-width: 45px;
+}
+
+.odds-value {
+    font-weight: 600;
+    color: #28a745;
+    font-size: 0.9em;
+    flex: 1;
+    text-align: right;
+}
+
+.odds-bookmaker {
+    font-size: 0.7em;
+    color: #999;
+    font-weight: normal;
+    min-width: 70px;
+    text-align: right;
+}
+
+.odds-unavailable {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background: #fff3cd;
+    color: #856404;
+    border-radius: 8px;
+    border: 1px solid #ffeaa7;
+    font-size: 14px;
+}
+
+.odds-unavailable-icon {
+    font-size: 18px;
+}
+
+.odds-unavailable-text {
+    flex: 1;
+}
+
+@media (max-width: 768px) {
+    .games-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .positions-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    header h1 {
+        font-size: 2em;
+    }
+}
+

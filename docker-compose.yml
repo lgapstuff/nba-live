@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: nba-edge-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-nba_edge}
+      MYSQL_USER: ${MYSQL_USER:-nba_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-nba_password}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nba-edge-api
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./static:/app/static
+    environment:
+      - FLASK_APP=app.main:create_app
+      - FLASK_ENV=${FLASK_ENV:-development}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: python run.py
+
+volumes:
+  mysql_data:
+
