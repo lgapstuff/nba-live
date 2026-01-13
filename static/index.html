@@ -11,11 +11,14 @@
         <header>
             <h1>🏀 NBA Lineups</h1>
             <div class="date-selector">
-                <label for="date-input">Fecha (para juegos):</label>
-                <input type="date" id="date-input" value="">
-                <button id="load-games-btn" class="main-btn">Cargar Juegos</button>
-                <button id="load-lineups-btn" class="main-btn">Cargar Lineups</button>
-                <button id="load-odds-btn" class="main-btn">Cargar Odds</button>
+                <div id="schedule-upload-section" class="hidden">
+                    <input type="file" id="schedule-file-input" accept=".json" style="display: none;">
+                    <input type="file" id="depth-chart-file-input" accept=".json" style="display: none;">
+                    <button id="load-schedules-btn" class="main-btn">Cargar Schedules y Depth Charts</button>
+                </div>
+                <div id="lineups-actions-section" class="hidden">
+                    <button id="load-lineups-btn" class="main-btn">Cargar Lineups</button>
+                </div>
             </div>
         </header>
 

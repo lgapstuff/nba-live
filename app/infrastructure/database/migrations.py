@@ -70,7 +70,7 @@ def create_tables(config: Config) -> None:
                         game_id VARCHAR(50) NOT NULL,
                         lineup_date DATE NOT NULL,
                         team_abbr VARCHAR(10) NOT NULL,
-                        position VARCHAR(5) NOT NULL,
+                        position VARCHAR(50) NOT NULL,
                         player_id INT NOT NULL,
                         player_name VARCHAR(100) NOT NULL,
                         player_photo_url VARCHAR(255),
@@ -85,6 +85,19 @@ def create_tables(config: Config) -> None:
                         FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """)
+                
+                # Update position column size if it exists and is too small
+                # This handles existing databases that have VARCHAR(5)
+                try:
+                    cursor.execute("""
+                        ALTER TABLE game_lineups 
+                        MODIFY COLUMN position VARCHAR(50) NOT NULL
+                    """)
+                    logger.info("Updated position column size to VARCHAR(50)")
+                except Exception as e:
+                    # Column might not exist yet or already has correct size
+                    logger.debug(f"Position column update: {e}")
+                    pass
                 
                 # Add player_photo_url column if it doesn't exist (for existing tables)
                 try:
@@ -105,6 +118,37 @@ def create_tables(config: Config) -> None:
                 except Exception:
                     # Column already exists, ignore
                     pass
+                
+                # Add points_line column if it doesn't exist (for storing odds points)
+                try:
+                    cursor.execute("""
+                        ALTER TABLE game_lineups 
+                        ADD COLUMN points_line DECIMAL(5,1) NULL
+                    """)
+                    logger.info("Added points_line column to game_lineups")
+                except Exception:
+                    # Column already exists, ignore
+                    pass
+                
+                # Create team_depth_charts table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS team_depth_charts (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        team_abbr VARCHAR(10) NOT NULL,
+                        season INT NOT NULL,
+                        position VARCHAR(5) NOT NULL,
+                        depth INT NOT NULL,
+                        player_id INT NOT NULL,
+                        player_name VARCHAR(100) NOT NULL,
+                        player_photo_url VARCHAR(255),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY unique_depth_chart (team_abbr, season, position, depth, player_id),
+                        INDEX idx_team_abbr (team_abbr),
+                        INDEX idx_season (season),
+                        INDEX idx_player_name (player_name)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """)
                 
                 conn.commit()
                 logger.info("Database tables created successfully")

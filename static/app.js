@@ -2,102 +2,16 @@
 const API_BASE_URL = 'http://localhost:8000';
 
 // DOM Elements
-const dateInput = document.getElementById('date-input');
-const loadGamesBtn = document.getElementById('load-games-btn');
+const scheduleUploadSection = document.getElementById('schedule-upload-section');
+const scheduleFileInput = document.getElementById('schedule-file-input');
+const depthChartFileInput = document.getElementById('depth-chart-file-input');
+const loadSchedulesBtn = document.getElementById('load-schedules-btn');
+const lineupsActionsSection = document.getElementById('lineups-actions-section');
 const loadLineupsBtn = document.getElementById('load-lineups-btn');
-const loadOddsBtn = document.getElementById('load-odds-btn');
 const loadingDiv = document.getElementById('loading');
 const loadingText = document.getElementById('loading-text');
 const errorDiv = document.getElementById('error');
 const gamesContainer = document.getElementById('games-container');
-
-// Set today's date as default
-dateInput.value = new Date().toISOString().split('T')[0];
-
-// Event Listeners
-loadGamesBtn.addEventListener('click', loadGames);
-loadLineupsBtn.addEventListener('click', loadLineups);
-loadOddsBtn.addEventListener('click', loadAllOdds);
-dateInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        loadGames();
-    }
-});
-
-// Load games function (gets games from schedule)
-async function loadGames() {
-    const date = dateInput.value;
-    
-    if (!date) {
-        showError('Por favor selecciona una fecha');
-        return;
-    }
-    
-    // Show loading
-    loadingText.textContent = 'Cargando juegos...';
-    showLoading();
-    hideError();
-    gamesContainer.innerHTML = '';
-    
-    try {
-        console.log(`Fetching games for date: ${date}`);
-        const url = `${API_BASE_URL}/nba/games?date=${date}`;
-        console.log(`Request URL: ${url}`);
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-        
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            },
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        console.log(`Response status: ${response.status}`);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Error response:', errorText);
-            let errorData;
-            try {
-                errorData = JSON.parse(errorText);
-            } catch (e) {
-                errorData = { message: errorText || `HTTP ${response.status}` };
-            }
-            throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        console.log('Response data:', data);
-        
-          if (data.success && data.games && data.games.length > 0) {
-              displayGames(data.games, false); // false = no lineups loaded yet
-          } else {
-              showEmptyState('No hay juegos disponibles para esta fecha');
-          }
-        
-    } catch (error) {
-        console.error('Error details:', error);
-        let errorMessage = 'Error desconocido';
-        
-          if (error.name === 'AbortError') {
-              errorMessage = 'La petición tardó demasiado. Intenta de nuevo.';
-          } else if (error.message) {
-              errorMessage = error.message;
-          } else if (error.toString) {
-              errorMessage = error.toString();
-          }
-
-          showError(`Error al cargar juegos: ${errorMessage}`);
-    } finally {
-        hideLoading();
-    }
-}
 
 // Get today's date in Los Angeles/Tijuana timezone (America/Los_Angeles)
 function getTodayInLATimezone() {
@@ -113,25 +27,133 @@ function getTodayInLATimezone() {
     return `${year}-${month}-${day}`;
 }
 
-// Load lineups function (imports lineups from FantasyNerds)
-// Only loads lineups for today (Los Angeles/Tijuana timezone)
-async function loadLineups() {
-    // Always use today's date in Los Angeles timezone
-    const date = getTodayInLATimezone();
+// Event Listeners
+loadSchedulesBtn.addEventListener('click', () => {
+    // First select schedule file, then depth chart file
+    scheduleFileInput.click();
+});
+scheduleFileInput.addEventListener('change', () => {
+    // After schedule file is selected, select depth chart file
+    depthChartFileInput.click();
+});
+depthChartFileInput.addEventListener('change', handleScheduleFileSelect);
+loadLineupsBtn.addEventListener('click', loadLineups);
+
+// Check if schedule exists for today and load accordingly
+async function checkScheduleAndLoad() {
+    const today = getTodayInLATimezone();
     
-    console.log(`Loading lineups for today (LA timezone): ${date}`);
+    try {
+        const response = await fetch(`${API_BASE_URL}/nba/games?date=${today}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.games && data.games.length > 0) {
+            // Schedule exists, show games and lineups actions
+            scheduleUploadSection.classList.add('hidden');
+            lineupsActionsSection.classList.remove('hidden');
+            // Load lineups if they exist
+            await loadGamesWithLineups(today);
+        } else {
+            // No schedule for today, show button
+            scheduleUploadSection.classList.remove('hidden');
+            lineupsActionsSection.classList.add('hidden');
+            gamesContainer.innerHTML = '';
+        }
+    } catch (error) {
+        console.error('Error checking schedule:', error);
+        // On error, show the button so user can try to load
+        scheduleUploadSection.classList.remove('hidden');
+        lineupsActionsSection.classList.add('hidden');
+    }
+}
+
+// Handle schedule file selection (both files must be selected)
+async function handleScheduleFileSelect(event) {
+    const scheduleFile = scheduleFileInput.files[0];
+    const depthChartFile = depthChartFileInput.files[0];
+    
+    if (!scheduleFile || !depthChartFile) {
+        // Wait for both files to be selected
+        if (!scheduleFile) {
+            showError('Por favor selecciona el archivo de schedule primero');
+        } else if (!depthChartFile) {
+            showError('Por favor selecciona el archivo de depth chart');
+        }
+        return;
+    }
     
     // Show loading
-    loadingText.textContent = `Cargando lineups desde FantasyNerds para hoy (${date})...`;
+    loadingText.textContent = 'Cargando schedules y depth charts...';
+    showLoading();
+    hideError();
+    gamesContainer.innerHTML = '';
+    
+    try {
+        const formData = new FormData();
+        formData.append('schedule_file', scheduleFile);
+        formData.append('depth_chart_file', depthChartFile);
+        
+        const response = await fetch(`${API_BASE_URL}/nba/schedule/import`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (e) {
+                errorData = { message: errorText || `HTTP ${response.status}` };
+            }
+            throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Schedule and depth charts loaded successfully, now load games for today
+            await loadGames();
+            // Hide the upload section and show lineups actions
+            scheduleUploadSection.classList.add('hidden');
+            lineupsActionsSection.classList.remove('hidden');
+        } else {
+            throw new Error(data.message || 'Error al cargar schedules y depth charts');
+        }
+        
+    } catch (error) {
+        console.error('Error loading schedules and depth charts:', error);
+        showError(`Error al cargar schedules y depth charts: ${error.message || error}`);
+    } finally {
+        hideLoading();
+        // Reset file inputs
+        scheduleFileInput.value = '';
+        depthChartFileInput.value = '';
+    }
+}
+
+// Load lineups function (imports lineups from FantasyNerds)
+async function loadLineups() {
+    const today = getTodayInLATimezone();
+    
+    // Show loading
+    loadingText.textContent = `Cargando lineups desde FantasyNerds para hoy (${today})...`;
     showLoading();
     hideError();
     
     try {
-        console.log(`Importing lineups for date: ${date}`);
-        const url = `${API_BASE_URL}/nba/lineups/import?date=${date}`;
-        console.log(`Request URL: ${url}`);
-        
-        const response = await fetch(url, {
+        const response = await fetch(`${API_BASE_URL}/nba/lineups/import?date=${today}`, {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -139,7 +161,6 @@ async function loadLineups() {
             }
         });
         
-        // Check if response is ok before parsing JSON
         if (!response.ok) {
             const errorText = await response.text();
             let errorData;
@@ -152,11 +173,10 @@ async function loadLineups() {
         }
         
         const data = await response.json();
-        console.log('Import response:', data);
         
         if (data.success) {
-            // Reload games with lineups for today
-            await loadGamesWithLineups(getTodayInLATimezone());
+            // Reload games with lineups
+            await loadGamesWithLineups(today);
         } else {
             throw new Error(data.message || 'Error al cargar lineups');
         }
@@ -169,15 +189,100 @@ async function loadLineups() {
     }
 }
 
-// Load games with lineups (gets games that have lineups)
-async function loadGamesWithLineups(date = null) {
-    // If no date provided, use the date input value (for manual loading)
-    // If date is provided (from loadLineups), use that date
-    const queryDate = date || dateInput.value;
+// Load odds for a specific game (must be in global scope for onclick)
+window.loadOddsForGame = async function(gameId, buttonElement) {
+    console.log('loadOddsForGame called with gameId:', gameId);
     
-    if (!queryDate) {
+    if (!gameId) {
+        console.error('No gameId provided');
+        showError('Error: No se proporcionó un ID de juego');
         return;
     }
+    
+    if (!buttonElement) {
+        console.error('No buttonElement provided');
+        showError('Error: No se proporcionó el elemento del botón');
+        return;
+    }
+    
+    // First check if depth charts exist
+    try {
+        const checkResponse = await fetch(`${API_BASE_URL}/nba/depth-charts/check`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (checkResponse.ok) {
+            const checkData = await checkResponse.json();
+            if (!checkData.has_depth_charts) {
+                showError('Debes cargar Depth Charts antes de cargar Odds. Por favor carga los Depth Charts primero.');
+                return;
+            }
+        }
+    } catch (error) {
+        console.warn('Could not check depth charts:', error);
+        // Continue anyway, backend will validate
+    }
+    
+    // Show loading state on button
+    const btnText = buttonElement.querySelector('.btn-text') || buttonElement;
+    const originalText = btnText.textContent;
+    btnText.textContent = 'Cargando...';
+    buttonElement.disabled = true;
+    
+    try {
+        console.log(`Fetching odds for game ${gameId} from ${API_BASE_URL}/nba/games/${gameId}/odds`);
+        
+        const response = await fetch(`${API_BASE_URL}/nba/games/${gameId}/odds`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error response:', errorText);
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (e) {
+                errorData = { message: errorText || `HTTP ${response.status}` };
+            }
+            throw new Error(errorData.message || `Error ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Odds data received:', data);
+        
+        if (data.success) {
+            console.log('Odds loaded successfully, reloading games...');
+            // Reload games with lineups to show updated BENCH players
+            const today = getTodayInLATimezone();
+            await loadGamesWithLineups(today);
+        } else {
+            throw new Error(data.message || 'Error al cargar odds');
+        }
+        
+    } catch (error) {
+        console.error('Error loading odds for game:', error);
+        showError(`Error al cargar odds: ${error.message || error}`);
+    } finally {
+        // Restore button state
+        btnText.textContent = originalText;
+        buttonElement.disabled = false;
+    }
+};
+
+// Load games with lineups
+async function loadGamesWithLineups(date = null) {
+    const today = date || getTodayInLATimezone();
     
     // Show loading
     loadingText.textContent = 'Cargando juegos con lineups...';
@@ -186,9 +291,7 @@ async function loadGamesWithLineups(date = null) {
     gamesContainer.innerHTML = '';
     
     try {
-        console.log(`Fetching lineups for date: ${queryDate}`);
-        const url = `${API_BASE_URL}/nba/lineups?date=${queryDate}`;
-        console.log(`Request URL: ${url}`);
+        const url = `${API_BASE_URL}/nba/lineups?date=${today}`;
         
         const response = await fetch(url, {
             method: 'GET',
@@ -210,23 +313,81 @@ async function loadGamesWithLineups(date = null) {
         }
         
         const data = await response.json();
-        console.log('Lineups response:', data);
-        // Debug: log lineup_date for each game
-        if (data.games) {
-            data.games.forEach(game => {
-                console.log(`Game ${game.game_id}: game_date=${game.game_date}, lineup_date=${game.lineup_date}`);
-            });
-        }
         
         if (data.success && data.games && data.games.length > 0) {
-            displayGames(data.games, true); // true = lineups loaded
+            displayGames(data.games, true); // true = has lineups
         } else {
-            showEmptyState('No hay lineups disponibles para esta fecha');
+            // No lineups, but show games from schedule
+            await loadGames();
         }
         
     } catch (error) {
         console.error('Error loading games with lineups:', error);
         showError(`Error al cargar juegos: ${error.message || error}`);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Load games function (gets games from schedule)
+async function loadGames() {
+    const today = getTodayInLATimezone();
+    
+    // Show loading
+    loadingText.textContent = 'Cargando juegos...';
+    showLoading();
+    hideError();
+    gamesContainer.innerHTML = '';
+    
+    try {
+        const url = `${API_BASE_URL}/nba/games?date=${today}`;
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (e) {
+                errorData = { message: errorText || `HTTP ${response.status}` };
+            }
+            throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.games && data.games.length > 0) {
+            displayGames(data.games);
+        } else {
+            showEmptyState('No hay juegos disponibles para hoy');
+        }
+        
+    } catch (error) {
+        console.error('Error details:', error);
+        let errorMessage = 'Error desconocido';
+        
+        if (error.name === 'AbortError') {
+            errorMessage = 'La petición tardó demasiado. Intenta de nuevo.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        } else if (error.toString) {
+            errorMessage = error.toString();
+        }
+
+        showError(`Error al cargar juegos: ${errorMessage}`);
     } finally {
         hideLoading();
     }
@@ -240,29 +401,27 @@ function displayGames(games, hasLineups = false) {
         const gameCard = createGameCard(game, hasLineups);
         gamesContainer.appendChild(gameCard);
     });
+    
+    // Add event listeners to all "Cargar Odds" buttons
+    if (hasLineups) {
+        const loadOddsButtons = gamesContainer.querySelectorAll('.load-odds-btn');
+        loadOddsButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const gameId = this.getAttribute('data-game-id');
+                loadOddsForGame(gameId, this);
+            });
+        });
+    }
 }
 
-// Create game card
+// Create game card with lineups
 function createGameCard(game, hasLineups = false) {
     const card = document.createElement('div');
     card.className = 'game-card';
     
-    // Use lineup_date if available (for lineups), otherwise use game_date
-    // Priority: lineup_date > game_date (lineup_date is the date the lineup was published)
-    // If lineups are loaded, prefer lineup_date to show the correct date
-    let gameDate;
-    if (hasLineups && game.lineup_date) {
-        gameDate = game.lineup_date;
-    } else {
-        gameDate = game.lineup_date || game.game_date || 'N/A';
-    }
+    const gameDate = game.game_date || game.lineup_date || 'N/A';
     const gameTime = game.game_time || 'N/A';
-    
-    // Debug log
-    if (game.lineup_date && game.game_date && game.lineup_date !== game.game_date) {
-        console.log(`Date mismatch for game ${game.game_id}: game_date=${game.game_date}, lineup_date=${game.lineup_date}, hasLineups=${hasLineups}, using: ${gameDate}`);
-    }
-    const hasLineup = hasLineups || game.has_lineup || (game.lineups && Object.keys(game.lineups).length > 0);
+    const lineups = game.lineups || {};
     
     card.innerHTML = `
         <div class="game-header">
@@ -288,61 +447,21 @@ function createGameCard(game, hasLineups = false) {
             </div>
         </div>
         
-        <div class="actions-section">
-            ${!hasLineup ? `
-                <button class="action-btn" onclick="loadLineupsForGame('${game.game_id}')">
-                    Cargar Lineups
+        ${hasLineups ? `
+            <div class="actions-section">
+                <button class="action-btn load-odds-btn" data-game-id="${game.game_id}">
+                    Cargar Odds
                 </button>
-            ` : ''}
-            <button class="odds-btn" onclick="loadOdds('${game.game_id}', this)">
-                <span class="btn-text">${hasLineup ? 'Actualizar' : 'Cargar'} Odds de Puntos</span>
-                <span class="btn-loading hidden">Cargando...</span>
-            </button>
-            <div class="odds-container" id="odds-${game.game_id}"></div>
-        </div>
-        
-        <div class="lineups-section">
-            <h3>Lineups</h3>
-            ${createLineupsHTML(game.lineups || {}, game.away_team, game.away_team_name, game.away_team_logo_url, game.game_id)}
-            ${createLineupsHTML(game.lineups || {}, game.home_team, game.home_team_name, game.home_team_logo_url, game.game_id)}
-        </div>
+            </div>
+            <div class="lineups-section">
+                <h3>Lineups</h3>
+                ${createLineupsHTML(lineups, game.away_team, game.away_team_name, game.away_team_logo_url, game.game_id)}
+                ${createLineupsHTML(lineups, game.home_team, game.home_team_name, game.home_team_logo_url, game.game_id)}
+            </div>
+        ` : ''}
     `;
     
     return card;
-}
-
-// Load lineups for a specific game
-async function loadLineupsForGame(gameId) {
-    // Always use today's date in Los Angeles timezone
-    const date = getTodayInLATimezone();
-    
-    loadingText.textContent = `Cargando lineups para hoy (${date})...`;
-    showLoading();
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/nba/lineups/import?date=${date}`, {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            // Reload games with lineups for today
-            await loadGamesWithLineups(getTodayInLATimezone());
-        } else {
-            throw new Error(data.message || 'Error al cargar lineups');
-        }
-        
-    } catch (error) {
-        console.error('Error loading lineups for game:', error);
-        showError(`Error al cargar lineups: ${error.message || error}`);
-    } finally {
-        hideLoading();
-    }
 }
 
 // Create lineups HTML
@@ -366,7 +485,7 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
     const positions = ['PG', 'SG', 'SF', 'PF', 'C'];
     
     // Get starters (players with positions)
-    const positionsHTML = positions.map(position => {
+    const startersHTML = positions.map(position => {
         const player = teamLineup[position];
         if (!player) {
             return `
@@ -377,10 +496,34 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
             `;
         }
         
-        const playerStatus = player.player_status || (player.confirmed ? 'STARTER' : 'BENCH');
+        const playerStatus = player.player_status || 'STARTER';
         const statusBadge = playerStatus === 'STARTER' 
             ? '<span class="status-badge starter">STARTER</span>' 
             : '<span class="status-badge bench">BENCH</span>';
+        
+        const pointsLine = player.points_line !== null && player.points_line !== undefined 
+            ? `<div class="player-points">${player.points_line} pts</div>` 
+            : '';
+        
+        // Show OVER/UNDER history if available
+        let overUnderHistory = '';
+        if (player.over_under_history) {
+            const history = player.over_under_history;
+            const overCount = history.over_count || 0;
+            const underCount = history.under_count || 0;
+            const totalGames = history.total_games || 0;
+            
+            if (totalGames > 0) {
+                overUnderHistory = `
+                    <div class="over-under-history">
+                        <div class="over-under-stats">
+                            <span class="over-stat">OVER: ${overCount}/${totalGames}</span>
+                            <span class="under-stat">UNDER: ${underCount}/${totalGames}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        }
         
         return `
             <div class="position-card" data-player-id="${player.player_id || ''}" data-player-name="${player.player_name}">
@@ -390,37 +533,49 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
                      class="player-photo"
                      onerror="this.src='${getPlaceholderPlayer()}'">
                 <div class="player-name">${player.player_name}</div>
+                ${pointsLine}
+                ${overUnderHistory}
                 <div class="player-id">ID: ${player.player_id || 'N/A'}</div>
                 ${statusBadge}
-                ${player.confirmed ? '<span class="confirmed-badge">Confirmado</span>' : ''}
-                <div class="player-odds" id="odds-${gameId}-${player.player_id || player.player_name}"></div>
             </div>
         `;
     }).join('');
     
-    // Get BENCH players (players with position='BENCH' or no position)
+    // Get BENCH players (now stored as array under 'BENCH' key)
     const benchPlayers = [];
-    Object.keys(teamLineup).forEach(key => {
-        if (key !== 'BENCH' && !positions.includes(key)) {
-            // This might be a BENCH player stored with a different key
-            const player = teamLineup[key];
-            if (player && (player.position === 'BENCH' || player.player_status === 'BENCH')) {
-                benchPlayers.push({...player, position: key});
-            }
-        }
-    });
-    
-    // Also check for BENCH position
     if (teamLineup['BENCH']) {
         if (Array.isArray(teamLineup['BENCH'])) {
-            benchPlayers.push(...teamLineup['BENCH'].map(p => ({...p, position: 'BENCH'})));
+            benchPlayers.push(...teamLineup['BENCH']);
         } else {
-            benchPlayers.push({...teamLineup['BENCH'], position: 'BENCH'});
+            benchPlayers.push(teamLineup['BENCH']);
         }
     }
     
     const benchHTML = benchPlayers.map(player => {
-        const statusBadge = '<span class="status-badge bench">BENCH</span>';
+        const pointsLine = player.points_line !== null && player.points_line !== undefined 
+            ? `<div class="player-points">${player.points_line} pts</div>` 
+            : '';
+        
+        // Show OVER/UNDER history if available
+        let overUnderHistory = '';
+        if (player.over_under_history) {
+            const history = player.over_under_history;
+            const overCount = history.over_count || 0;
+            const underCount = history.under_count || 0;
+            const totalGames = history.total_games || 0;
+            
+            if (totalGames > 0) {
+                overUnderHistory = `
+                    <div class="over-under-history">
+                        <div class="over-under-stats">
+                            <span class="over-stat">OVER: ${overCount}/${totalGames}</span>
+                            <span class="under-stat">UNDER: ${underCount}/${totalGames}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        
         return `
             <div class="position-card bench-card" data-player-id="${player.player_id || ''}" data-player-name="${player.player_name}">
                 <div class="position-label">BENCH</div>
@@ -429,9 +584,10 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
                      class="player-photo"
                      onerror="this.src='${getPlaceholderPlayer()}'">
                 <div class="player-name">${player.player_name}</div>
+                ${pointsLine}
+                ${overUnderHistory}
                 <div class="player-id">ID: ${player.player_id || 'N/A'}</div>
-                ${statusBadge}
-                <div class="player-odds" id="odds-${gameId}-${player.player_id || player.player_name}"></div>
+                <span class="status-badge bench">BENCH</span>
             </div>
         `;
     }).join('');
@@ -446,11 +602,15 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
                 <span class="team-name">${teamName || teamAbbr}</span>
             </div>
             <div class="positions-grid">
-                ${positionsHTML}
+                ${startersHTML}
             </div>
-            ${benchHTML ? `<div class="bench-players"><h4>Jugadores BENCH (desde Odds)</h4><div class="positions-grid">${benchHTML}</div></div>` : ''}
+            ${benchHTML ? `<div class="bench-players"><h4>Jugadores BENCH</h4><div class="positions-grid">${benchHTML}</div></div>` : ''}
         </div>
     `;
+}
+
+function getPlaceholderPlayer() {
+    return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNkZGQiLz48Y2lyY2xlIGN4PSI0MCIgY3k9IjMwIiByPSIxMCIgZmlsbD0iIzk5OSIvPjxwYXRoIGQ9Ik0yMCA1MHEwIDIwIDIwIDIwaDIwcTIwIDAgMjAgLTIwIiBmaWxsPSIjOTk5Ii8+PC9zdmc+';
 }
 
 // Utility functions
@@ -497,10 +657,6 @@ function getPlaceholderLogo() {
     return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5OQkE8L3RleHQ+PC9zdmc+';
 }
 
-function getPlaceholderPlayer() {
-    return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNkZGQiLz48Y2lyY2xlIGN4PSI0MCIgY3k9IjMwIiByPSIxMCIgZmlsbD0iIzk5OSIvPjxwYXRoIGQ9Ik0yMCA1MHEwIDIwIDIwIDIwaDIwcTIwIDAgMjAgLTIwIiBmaWxsPSIjOTk5Ii8+PC9zdmc+';
-}
-
 function showLoading() {
     loadingDiv.classList.remove('hidden');
 }
@@ -521,273 +677,20 @@ function hideError() {
 function showEmptyState(message) {
     gamesContainer.innerHTML = `
         <div class="empty-state">
-            <h2>📋 Sin lineups</h2>
+            <h2>📋 Sin juegos</h2>
             <p>${message}</p>
         </div>
     `;
 }
 
-// Load odds for all games of today
-async function loadAllOdds() {
-    const date = getTodayInLATimezone();
-    
-    // Show loading
-    loadingText.textContent = `Cargando odds para todos los juegos de hoy (${date})...`;
-    showLoading();
-    hideError();
-    
-    try {
-        // First, get all games for today
-        const gamesResponse = await fetch(`${API_BASE_URL}/nba/lineups?date=${date}`, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!gamesResponse.ok) {
-            throw new Error(`Error al obtener juegos: ${gamesResponse.status}`);
-        }
-        
-        const gamesData = await gamesResponse.json();
-        
-        if (!gamesData.success || !gamesData.games || gamesData.games.length === 0) {
-            showError('No hay juegos disponibles para cargar odds');
-            return;
-        }
-        
-        // Load odds for each game
-        const oddsPromises = gamesData.games.map(game => {
-            const buttonElement = document.querySelector(`button[onclick*="loadOdds('${game.game_id}'"]`);
-            if (buttonElement && !buttonElement.disabled) {
-                return loadOdds(game.game_id, buttonElement).catch(err => {
-                    console.error(`Error loading odds for game ${game.game_id}:`, err);
-                    return null;
-                });
-            }
-            return Promise.resolve();
-        });
-        
-        await Promise.all(oddsPromises);
-        
-        showError(''); // Clear any errors
-        
-    } catch (error) {
-        console.error('Error loading all odds:', error);
-        showError(`Error al cargar odds: ${error.message || error}`);
-    } finally {
-        hideLoading();
-    }
-}
-
-// Load odds for a game
-async function loadOdds(gameId, buttonElement) {
-    const btnText = buttonElement.querySelector('.btn-text');
-    const btnLoading = buttonElement.querySelector('.btn-loading');
-    const oddsContainer = document.getElementById(`odds-${gameId}`);
-    
-    // Check if odds are already loaded (button should be hidden)
-    if (buttonElement.style.display === 'none') {
-        return; // Already loaded
-    }
-    
-    // Show loading state
-    btnText.classList.add('hidden');
-    btnLoading.classList.remove('hidden');
-    buttonElement.disabled = true;
-    oddsContainer.innerHTML = '';
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/nba/games/${gameId}/odds`, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.success && data.matched_players && data.matched_players.length > 0) {
-            displayOdds(gameId, data.matched_players);
-            
-            // Check if we need to reload games (if no lineups were loaded before)
-            const gameCard = buttonElement.closest('.game-card');
-            const hasLineup = gameCard && gameCard.querySelector('.lineups-section .team-lineup .positions-grid');
-            
-            if (!hasLineup) {
-                // Reload games to show BENCH players from odds
-                await loadGamesWithLineups();
-            } else {
-                // Just update the odds display
-                // Button text changes to "Actualizar" but stays visible
-                btnText.textContent = 'Actualizar Odds';
-            }
-        } else {
-            // Show error but keep button visible so user can retry
-            oddsContainer.innerHTML = `
-                <div class="odds-error">
-                    ${data.message || 'No se encontraron odds para este juego'}
-                </div>
-            `;
-        }
-        
-    } catch (error) {
-        console.error('Error loading odds:', error);
-        oddsContainer.innerHTML = `
-            <div class="odds-error">
-                Error al cargar odds: ${error.message}
-            </div>
-        `;
-    } finally {
-        // Always restore button state
-        btnText.classList.remove('hidden');
-        btnLoading.classList.add('hidden');
-        buttonElement.disabled = false;
-    }
-}
-
-// Display odds for matched players
-function displayOdds(gameId, matchedPlayers) {
-    // Group odds by player (by player_id or player_name if no ID)
-    const playerOddsMap = {};
-    
-    matchedPlayers.forEach(player => {
-        // Use player_id if available, otherwise use player_name
-        const playerKey = player.player_id || player.player_name;
-        if (!playerOddsMap[playerKey]) {
-            playerOddsMap[playerKey] = {
-                player_name: player.player_name,
-                player_id: player.player_id,
-                odds: []
-            };
-        }
-        
-        // Add odds entry with over/under information
-        if (player.points_line) {
-            playerOddsMap[playerKey].odds.push({
-                points_line: player.points_line,
-                over_odds: player.over_odds,
-                over_bookmaker: player.over_bookmaker,
-                under_odds: player.under_odds,
-                under_bookmaker: player.under_bookmaker
-            });
-        }
-    });
-    
-    // Display odds for each player
-    Object.keys(playerOddsMap).forEach(playerKey => {
-        // Try both player_id and player_name as selectors
-        const playerData = playerOddsMap[playerKey];
-        const oddsElementById = playerData.player_id 
-            ? document.getElementById(`odds-${gameId}-${playerData.player_id}`)
-            : null;
-        const oddsElementByName = document.getElementById(`odds-${gameId}-${playerData.player_name}`);
-        const oddsElement = oddsElementById || oddsElementByName;
-        
-        if (oddsElement) {
-            oddsElement.innerHTML = createPlayerOddsHTML(playerData);
-        }
-    });
-}
-
-// Create HTML for player odds
-function createPlayerOddsHTML(playerData) {
-    // Group by points line
-    const oddsByLine = {};
-    
-    playerData.odds.forEach(odd => {
-        const key = odd.points_line;
-        if (!oddsByLine[key]) {
-            oddsByLine[key] = {
-                points_line: odd.points_line,
-                over_odds: null,
-                over_bookmaker: null,
-                under_odds: null,
-                under_bookmaker: null
-            };
-        }
-        
-        // Use the best odds (if multiple lines, keep the first one or best)
-        if (odd.over_odds !== null && odd.over_odds !== undefined) {
-            oddsByLine[key].over_odds = odd.over_odds;
-            oddsByLine[key].over_bookmaker = odd.over_bookmaker;
-        }
-        if (odd.under_odds !== null && odd.under_odds !== undefined) {
-            oddsByLine[key].under_odds = odd.under_odds;
-            oddsByLine[key].under_bookmaker = odd.under_bookmaker;
-        }
-    });
-    
-    const oddsHTML = Object.values(oddsByLine).map(lineData => {
-        // Show both Over and Under if available
-        let oddsDisplay = '';
-        
-        if (lineData.over_odds !== null && lineData.over_odds !== undefined) {
-            oddsDisplay += `
-                <div class="odds-line-item">
-                    <span class="odds-type">Over</span>
-                    <span class="odds-value">${formatAmericanOdds(lineData.over_odds)}</span>
-                    ${lineData.over_bookmaker ? `<span class="odds-bookmaker">${lineData.over_bookmaker}</span>` : ''}
-                </div>
-            `;
-        }
-        
-        if (lineData.under_odds !== null && lineData.under_odds !== undefined) {
-            oddsDisplay += `
-                <div class="odds-line-item">
-                    <span class="odds-type">Under</span>
-                    <span class="odds-value">${formatAmericanOdds(lineData.under_odds)}</span>
-                    ${lineData.under_bookmaker ? `<span class="odds-bookmaker">${lineData.under_bookmaker}</span>` : ''}
-                </div>
-            `;
-        }
-        
-        if (!oddsDisplay) {
-            return '';
-        }
-        
-        return `
-            <div class="odds-line">
-                <div class="odds-line-header">
-                    <span class="odds-points">${lineData.points_line} pts</span>
-                </div>
-                <div class="odds-line-items">
-                    ${oddsDisplay}
-                </div>
-            </div>
-        `;
-    }).filter(html => html !== '').join('');
-    
-    if (!oddsHTML) {
-        return '';
-    }
-    
-    return `
-        <div class="player-odds-container">
-            ${oddsHTML}
-        </div>
-    `;
-}
-
-// Format American odds
-function formatAmericanOdds(odds) {
-    if (odds > 0) {
-        return `+${odds}`;
-    }
-    return odds.toString();
-}
-
-
-// Load lineups on page load
+// Check schedule and load games on page load
 window.addEventListener('DOMContentLoaded', () => {
-    // Optionally auto-load today's lineups
-    // loadLineups();
+    checkScheduleAndLoad();
+    
+    // Verify that loadOddsForGame is available globally
+    if (typeof window.loadOddsForGame === 'undefined') {
+        console.error('loadOddsForGame function is not defined in global scope!');
+    } else {
+        console.log('loadOddsForGame function is available');
+    }
 });
-

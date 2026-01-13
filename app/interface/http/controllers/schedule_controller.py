@@ -6,6 +6,7 @@ from flask import jsonify, request
 from typing import Dict, Any, Tuple
 
 from app.application.services.schedule_service import ScheduleService
+from app.application.services.depth_chart_service import DepthChartService
 
 logger = logging.getLogger(__name__)
 
@@ -13,65 +14,91 @@ logger = logging.getLogger(__name__)
 class ScheduleController:
     """Controller for schedule endpoints."""
     
-    def __init__(self, schedule_service: ScheduleService):
+    def __init__(self, schedule_service: ScheduleService, depth_chart_service: DepthChartService = None):
         """
         Initialize the controller.
         
         Args:
             schedule_service: Schedule service instance
+            depth_chart_service: Depth chart service instance (optional)
         """
         self.schedule_service = schedule_service
+        self.depth_chart_service = depth_chart_service
     
     def import_schedule(self) -> Tuple[Dict[str, Any], int]:
         """
-        Import schedule from JSON file or request body.
+        Import schedule and depth chart from JSON files.
+        Accepts two files: 'schedule_file' and 'depth_chart_file'.
+        Both files are required.
         
         Returns:
             JSON response and status code
         """
         try:
-            # Check if file was uploaded
-            if 'file' in request.files:
-                file = request.files['file']
-                if file.filename == '':
-                    return jsonify({
-                        "success": False,
-                        "message": "No file selected"
-                    }), 400
-                
-                # Save uploaded file temporarily
-                import tempfile
-                import os
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
-                    file.save(tmp.name)
-                    tmp_path = tmp.name
-                
-                try:
-                    result = self.schedule_service.import_schedule_from_json(tmp_path)
-                    status_code = 200 if result['success'] else 400
-                    return jsonify(result), status_code
-                finally:
-                    os.unlink(tmp_path)
+            import tempfile
+            import os
             
-            # Check if JSON data is in request body
-            elif request.is_json:
-                data = request.get_json()
-                result = self.schedule_service.import_schedule_from_dict(data)
-                status_code = 200 if result['success'] else 400
-                return jsonify(result), status_code
+            # Check if schedule file was uploaded
+            schedule_file = request.files.get('schedule_file')
+            depth_chart_file = request.files.get('depth_chart_file')
             
-            # Check if json_path parameter is provided
-            elif 'json_path' in request.args:
-                json_path = request.args.get('json_path')
-                result = self.schedule_service.import_schedule_from_json(json_path)
-                status_code = 200 if result['success'] else 400
-                return jsonify(result), status_code
-            
-            else:
+            if not schedule_file or schedule_file.filename == '':
                 return jsonify({
                     "success": False,
-                    "message": "No file, JSON data, or json_path parameter provided"
+                    "message": "schedule_file is required"
                 }), 400
+            
+            if not depth_chart_file or depth_chart_file.filename == '':
+                return jsonify({
+                    "success": False,
+                    "message": "depth_chart_file is required"
+                }), 400
+            
+            # Save uploaded files temporarily
+            schedule_tmp_path = None
+            depth_chart_tmp_path = None
+            
+            try:
+                # Save schedule file
+                with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.json') as tmp:
+                    schedule_file.save(tmp.name)
+                    schedule_tmp_path = tmp.name
+                
+                # Save depth chart file
+                with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.json') as tmp:
+                    depth_chart_file.save(tmp.name)
+                    depth_chart_tmp_path = tmp.name
+                
+                # Import schedule
+                schedule_result = self.schedule_service.import_schedule_from_json(schedule_tmp_path)
+                
+                # Import depth chart if service is available
+                depth_chart_result = None
+                if self.depth_chart_service:
+                    depth_chart_result = self.depth_chart_service.import_depth_charts_from_json(depth_chart_tmp_path)
+                else:
+                    depth_chart_result = {
+                        "success": False,
+                        "message": "Depth chart service not available"
+                    }
+                
+                # Combine results
+                combined_result = {
+                    "success": schedule_result.get('success', False) and depth_chart_result.get('success', False),
+                    "schedule": schedule_result,
+                    "depth_chart": depth_chart_result,
+                    "message": f"Schedule: {schedule_result.get('message', 'Unknown')}. Depth Chart: {depth_chart_result.get('message', 'Unknown')}"
+                }
+                
+                status_code = 200 if combined_result['success'] else 400
+                return jsonify(combined_result), status_code
+                
+            finally:
+                # Clean up temporary files
+                if schedule_tmp_path and os.path.exists(schedule_tmp_path):
+                    os.unlink(schedule_tmp_path)
+                if depth_chart_tmp_path and os.path.exists(depth_chart_tmp_path):
+                    os.unlink(depth_chart_tmp_path)
                 
         except Exception as e:
             logger.error(f"Error in import_schedule: {e}")

@@ -9,12 +9,16 @@ from app.infrastructure.repositories.game_repository import GameRepository
 from app.infrastructure.repositories.lineup_repository import LineupRepository
 from app.infrastructure.clients.fantasynerds_client import FantasyNerdsClient
 from app.infrastructure.clients.odds_api_client import OddsAPIClient
+from app.infrastructure.clients.nba_api_client import NBAClient
 from app.application.services.schedule_service import ScheduleService
 from app.application.services.lineup_service import LineupService
 from app.application.services.odds_service import OddsService
+from app.application.services.depth_chart_service import DepthChartService
+from app.application.services.player_stats_service import PlayerStatsService
 from app.interface.http.controllers.schedule_controller import ScheduleController
 from app.interface.http.controllers.lineup_controller import LineupController
 from app.interface.http.controllers.odds_controller import OddsController
+from app.interface.http.controllers.depth_chart_controller import DepthChartController
 
 nba_bp = Blueprint("nba", __name__, url_prefix="/nba")
 
@@ -25,12 +29,26 @@ game_repository = GameRepository(db_connection)
 lineup_repository = LineupRepository(db_connection)
 fantasynerds_client = FantasyNerdsClient(config.FANTASYNERDS_API_KEY or "")
 odds_api_client = OddsAPIClient(config.THE_ODDS_API_KEY or "")
+
+# Initialize NBA API client (optional - may fail if nba_api is not installed)
+nba_client = None
+player_stats_service = None
+try:
+    nba_client = NBAClient()
+    player_stats_service = PlayerStatsService(nba_client)
+except Exception as e:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"NBA API client not available: {e}. OVER/UNDER history will not be calculated.")
+
 schedule_service = ScheduleService(game_repository)
-lineup_service = LineupService(fantasynerds_client, lineup_repository, game_repository)
-odds_service = OddsService(odds_api_client, lineup_repository, game_repository)
-schedule_controller = ScheduleController(schedule_service)
+depth_chart_service = DepthChartService(fantasynerds_client, lineup_repository)
+lineup_service = LineupService(fantasynerds_client, lineup_repository, game_repository, depth_chart_service, player_stats_service)
+odds_service = OddsService(odds_api_client, lineup_repository, game_repository, depth_chart_service, player_stats_service)
+schedule_controller = ScheduleController(schedule_service, depth_chart_service)
 lineup_controller = LineupController(lineup_service, odds_service)
 odds_controller = OddsController(odds_service)
+depth_chart_controller = DepthChartController(depth_chart_service)
 
 
 @nba_bp.route("/games", methods=["GET"])
@@ -135,4 +153,47 @@ def get_game_odds(game_id: str):
         JSON with matched player odds
     """
     return odds_controller.get_player_points_odds(game_id)
+
+
+@nba_bp.route("/odds/import", methods=["POST"])
+def import_odds():
+    """
+    Import odds for all games of today.
+    
+    Query parameters:
+        date: Date in YYYY-MM-DD format (required, defaults to today)
+    
+    Returns:
+        JSON with import results
+    """
+    date = request.args.get('date')
+    if not date:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        la_tz = ZoneInfo('America/Los_Angeles')
+        date = datetime.now(la_tz).date().strftime('%Y-%m-%d')
+    
+    return odds_controller.import_odds_for_date(date)
+
+
+@nba_bp.route("/depth-charts/import", methods=["POST"])
+def import_depth_charts():
+    """
+    Import depth charts from FantasyNerds API for all teams.
+    
+    Returns:
+        JSON with import results
+    """
+    return depth_chart_controller.import_depth_charts()
+
+
+@nba_bp.route("/depth-charts/check", methods=["GET"])
+def check_depth_charts():
+    """
+    Check if depth charts exist in the database.
+    
+    Returns:
+        JSON with has_depth_charts boolean
+    """
+    return depth_chart_controller.check_depth_charts()
 

@@ -8,6 +8,8 @@ from datetime import datetime
 from app.domain.ports.fantasynerds_port import FantasyNerdsPort
 from app.infrastructure.repositories.lineup_repository import LineupRepository
 from app.infrastructure.repositories.game_repository import GameRepository
+from app.application.services.depth_chart_service import DepthChartService
+from app.application.services.player_stats_service import PlayerStatsService
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,9 @@ class LineupService:
     def __init__(self, 
                  fantasynerds_port: FantasyNerdsPort,
                  lineup_repository: LineupRepository,
-                 game_repository: GameRepository):
+                 game_repository: GameRepository,
+                 depth_chart_service: DepthChartService = None,
+                 player_stats_service: PlayerStatsService = None):
         """
         Initialize the service.
         
@@ -28,9 +32,13 @@ class LineupService:
             fantasynerds_port: Port for FantasyNerds API integration
             lineup_repository: Repository for lineup operations
             game_repository: Repository for game operations
+            depth_chart_service: Depth chart service (optional, for updating player status)
+            player_stats_service: Player stats service (optional, for OVER/UNDER history)
         """
         self.fantasynerds_port = fantasynerds_port
         self.lineup_repository = lineup_repository
+        self.depth_chart_service = depth_chart_service
+        self.player_stats_service = player_stats_service
         self.game_repository = game_repository
     
     def import_lineups_for_date(self, date: str) -> Dict[str, Any]:
@@ -113,10 +121,13 @@ class LineupService:
                     team_lineups[away_team] = lineups[away_team]
                 
                 if team_lineups:
-                    # Save lineups for this game
-                    saved_count = self.lineup_repository.save_lineups_for_game(
+                    # Save lineups for this game using depth chart
+                    # This will mark players from FantasyNerds as STARTER and others as BENCH
+                    saved_count = self._save_lineups_with_depth_chart(
                         game_id=game_id,
                         lineup_date=lineup_date,
+                        home_team=home_team,
+                        away_team=away_team,
                         team_lineups=team_lineups
                     )
                     total_lineups_saved += saved_count
@@ -272,6 +283,10 @@ class LineupService:
             else:
                 logger.warning(f"Failed to fetch lineups from FantasyNerds: {import_result.get('message')}")
         
+        # Enrich with OVER/UNDER history if player_stats_service is available
+        if lineups:
+            lineups = self._enrich_lineups_with_over_under_history(lineups)
+        
         return lineups
     
     def get_lineup_by_game_id(self, game_id: str, auto_fetch: bool = True) -> Optional[Dict[str, Any]]:
@@ -306,5 +321,240 @@ class LineupService:
                     lineup = self.lineup_repository.get_lineup_by_game_id(game_id)
                     logger.info(f"Successfully fetched and saved lineup for game {game_id}")
         
+        # Enrich with OVER/UNDER history if player_stats_service is available
+        if lineup:
+            enriched_lineups = self._enrich_lineups_with_over_under_history([lineup])
+            if enriched_lineups:
+                lineup = enriched_lineups[0]
+        
         return lineup
+    
+    def _save_lineups_with_depth_chart(self, game_id: str, lineup_date: str,
+                                       home_team: str, away_team: str,
+                                       team_lineups: Dict[str, Dict[str, Dict[str, Any]]]) -> int:
+        """
+        Save lineups for a game using depth chart.
+        Players from FantasyNerds lineups are marked as STARTER.
+        Players in depth chart but not in FantasyNerds lineups are marked as BENCH.
+        
+        Args:
+            game_id: Game identifier
+            lineup_date: Date of the lineup
+            home_team: Home team abbreviation
+            away_team: Away team abbreviation
+            team_lineups: Dictionary with team lineups from FantasyNerds
+        
+        Returns:
+            Number of players saved
+        """
+        if not self.depth_chart_service:
+            # Fallback to old behavior if depth chart service is not available
+            return self.lineup_repository.save_lineups_for_game(
+                game_id=game_id,
+                lineup_date=lineup_date,
+                team_lineups=team_lineups
+            )
+        
+        saved_count = 0
+        
+        # Process both teams
+        for team_abbr in [home_team, away_team]:
+            # Get all players from depth chart for this team
+            depth_chart_players = self.depth_chart_service.get_players_by_team(team_abbr)
+            
+            if not depth_chart_players:
+                logger.warning(f"No depth chart found for team {team_abbr}, skipping")
+                continue
+            
+            # Get lineup from FantasyNerds for this team
+            fantasy_lineup = team_lineups.get(team_abbr, {})
+            
+            # First, delete existing lineups for this team and game to start fresh
+            self.lineup_repository.delete_lineups_for_team_game(game_id, lineup_date, team_abbr)
+            
+            # Get player IDs from FantasyNerds lineup (these are the starters)
+            starter_player_ids = set()
+            starter_players_by_position = {}  # position -> player_data
+            
+            for position, player_data in fantasy_lineup.items():
+                if position in ['PG', 'SG', 'SF', 'PF', 'C']:  # Only actual positions
+                    player_id = int(player_data.get('playerId', 0))
+                    if player_id > 0:
+                        starter_player_ids.add(player_id)
+                        starter_players_by_position[position] = {
+                            'player_id': player_id,
+                            'player_name': player_data.get('name', ''),
+                            'confirmed': player_data.get('confirmed', '0') == '1' or player_data.get('confirmed', False)
+                        }
+            
+            # First, save players from FantasyNerds lineup as STARTERS in their positions
+            for position in ['PG', 'SG', 'SF', 'PF', 'C']:
+                if position in starter_players_by_position:
+                    starter_data = starter_players_by_position[position]
+                    player_id = starter_data['player_id']
+                    player_name = starter_data['player_name']
+                    confirmed = starter_data['confirmed']
+                    
+                    # Get player photo from depth chart if available
+                    player_photo_url = None
+                    for depth_player in depth_chart_players:
+                        if depth_player.get('player_id') == player_id:
+                            player_photo_url = depth_player.get('player_photo_url')
+                            break
+                    
+                    # Save player from FantasyNerds lineup as STARTER
+                    try:
+                        self.lineup_repository.save_lineup_for_game(
+                            game_id=game_id,
+                            lineup_date=lineup_date,
+                            team_abbr=team_abbr,
+                            position=position,  # Position from FantasyNerds lineup
+                            player_id=player_id,
+                            player_name=player_name,
+                            confirmed=confirmed,
+                            player_status='STARTER',
+                            player_photo_url=player_photo_url
+                        )
+                        saved_count += 1
+                    except Exception as e:
+                        logger.error(f"Error saving STARTER player {player_name} for team {team_abbr}: {e}")
+                        continue
+            
+            # Then, save players from depth chart that are NOT in FantasyNerds lineup as BENCH
+            # Save them with position 'BENCH' to avoid conflicts with starter positions
+            for depth_player in depth_chart_players:
+                player_id = depth_player.get('player_id', 0)
+                
+                # Skip if player is already saved as STARTER
+                if player_id in starter_player_ids:
+                    continue
+                
+                player_name = depth_player.get('player_name', '')
+                
+                # Save player from depth chart as BENCH with position 'BENCH'
+                # Use a unique key by including player_id in the position or use a different approach
+                # For now, we'll use 'BENCH' as position and handle uniqueness differently
+                try:
+                    # Use player_id as part of a unique identifier for BENCH players
+                    # We'll save them with position 'BENCH' and use a workaround for uniqueness
+                    self.lineup_repository.save_bench_player_for_game(
+                        game_id=game_id,
+                        lineup_date=lineup_date,
+                        team_abbr=team_abbr,
+                        player_id=player_id,
+                        player_name=player_name,
+                        player_photo_url=depth_player.get('player_photo_url')
+                    )
+                    saved_count += 1
+                except Exception as e:
+                    logger.error(f"Error saving BENCH player {player_name} for team {team_abbr}: {e}")
+                    continue
+        
+        return saved_count
+    
+    def _enrich_lineups_with_over_under_history(self, lineups_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Enrich lineup data with OVER/UNDER history for players who have points_line.
+        
+        Args:
+            lineups_data: List of game dictionaries with lineups
+            
+        Returns:
+            List of game dictionaries with enriched lineup data including OVER/UNDER history
+        """
+        if not self.player_stats_service:
+            logger.debug("Player stats service not available, skipping OVER/UNDER history enrichment")
+            return lineups_data
+        
+        logger.info(f"[ENRICH] Enriching {len(lineups_data)} games with OVER/UNDER history")
+        
+        nba_api = getattr(self.player_stats_service, 'nba_api', None)
+        
+        for game in lineups_data:
+            if 'lineups' not in game:
+                continue
+            
+            # Get team abbreviations from the game
+            home_team = game.get('home_team', '')
+            away_team = game.get('away_team', '')
+            
+            # Try to get NBA roster for both teams to map names to official IDs
+            team_players_map = {}  # player_name_lower -> nba_id
+            if nba_api and hasattr(nba_api, 'get_team_players'):
+                try:
+                    for team_abbr in [home_team, away_team]:
+                        if team_abbr:
+                            nba_players = nba_api.get_team_players(team_abbr)
+                            for nba_player in nba_players:
+                                player_name = nba_player.get('full_name', '')
+                                nba_id = nba_player.get('id')
+                                if player_name and nba_id:
+                                    team_players_map[player_name.lower()] = nba_id
+                    logger.info(f"[ENRICH] Loaded {len(team_players_map)} NBA player IDs from team rosters")
+                except Exception as e:
+                    logger.warning(f"[ENRICH] Could not load NBA team rosters: {e}")
+            
+            for team_abbr, team_lineup in game['lineups'].items():
+                # Process starters (positions PG, SG, SF, PF, C)
+                for position in ['PG', 'SG', 'SF', 'PF', 'C']:
+                    if position in team_lineup:
+                        player = team_lineup[position]
+                        if player.get('points_line') and player.get('player_id'):
+                            player_name = player.get('player_name', 'Unknown')
+                            player_id = player.get('player_id')  # FantasyNerds ID
+                            
+                            # Try to find official NBA ID
+                            official_nba_id = None
+                            if player_name:
+                                official_nba_id = team_players_map.get(player_name.lower())
+                                if official_nba_id:
+                                    logger.info(f"[ENRICH] Found official NBA ID {official_nba_id} for {player_name} (FantasyNerds ID: {player_id})")
+                            
+                            # Use official NBA ID if found, otherwise use FantasyNerds ID
+                            player_id_to_use = official_nba_id if official_nba_id else player_id
+                            
+                            logger.info(f"[ENRICH] Processing STARTER {player_name} (Using ID: {player_id_to_use}, Position: {position}, Points Line: {player.get('points_line')})")
+                            try:
+                                over_under_history = self.player_stats_service.calculate_over_under_history(
+                                    player_id=player_id_to_use,
+                                    points_line=player['points_line'],
+                                    num_games=10,
+                                    player_name=player_name
+                                )
+                                player['over_under_history'] = over_under_history
+                                logger.info(f"[ENRICH] Successfully calculated OVER/UNDER for {player_name}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                            except Exception as e:
+                                logger.warning(f"Could not calculate OVER/UNDER history for player {player_name}: {e}")
+                
+                # Process BENCH players
+                if 'BENCH' in team_lineup:
+                    bench_players = team_lineup['BENCH']
+                    if isinstance(bench_players, list):
+                        for player in bench_players:
+                            if player.get('points_line') and player.get('player_id'):
+                                player_name = player.get('player_name', 'Unknown')
+                                player_id = player.get('player_id')
+                                
+                                # Try to find official NBA ID
+                                official_nba_id = None
+                                if player_name:
+                                    official_nba_id = team_players_map.get(player_name.lower())
+                                    if official_nba_id:
+                                        logger.info(f"[ENRICH] Found official NBA ID {official_nba_id} for BENCH player {player_name} (FantasyNerds ID: {player_id})")
+                                
+                                # Use official NBA ID if found
+                                player_id_to_use = official_nba_id if official_nba_id else player_id
+                                
+                                try:
+                                    over_under_history = self.player_stats_service.calculate_over_under_history(
+                                        player_id=player_id_to_use,
+                                        points_line=player['points_line'],
+                                        num_games=10,
+                                        player_name=player_name
+                                    )
+                                    player['over_under_history'] = over_under_history
+                                except Exception as e:
+                                    logger.warning(f"Could not calculate OVER/UNDER history for player {player_name}: {e}")
+        
+        return lineups_data
 

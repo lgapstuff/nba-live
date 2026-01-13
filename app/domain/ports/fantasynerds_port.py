@@ -50,4 +50,15 @@ class FantasyNerdsPort(ABC):
             Dictionary with lineup information for all teams on that date
         """
         pass
+    
+    @abstractmethod
+    def get_depth_charts(self) -> Dict[str, Any]:
+        """
+        Get depth charts for all NBA teams.
+        
+        Returns:
+            Dictionary with depth charts for all teams
+            Format: {"season": 2021, "charts": {"SA": {...}, "DEN": {...}, ...}}
+        """
+        pass
 

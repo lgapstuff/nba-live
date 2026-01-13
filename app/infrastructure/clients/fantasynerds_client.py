@@ -134,4 +134,66 @@ class FantasyNerdsClient(FantasyNerdsPort):
         except Exception as e:
             logger.error(f"Unexpected error fetching lineups: {e}")
             raise
+    
+    def get_depth_charts(self) -> Dict[str, Any]:
+        """
+        Get depth charts for all NBA teams from FantasyNerds API.
+        
+        Returns:
+            Dictionary with depth charts for all teams
+            Format: {"season": 2021, "charts": {"SA": {...}, "DEN": {...}, ...}}
+        """
+        try:
+            url = f"{self.base_url}/v1/nba/depth"
+            params = {
+                'apikey': self.api_key
+            }
+            
+            logger.info("Fetching depth charts from FantasyNerds")
+            response = requests.get(url, params=params, timeout=30)
+            
+            # Check if response is successful
+            if not response.ok:
+                error_text = response.text[:500] if response.text else "No error message"
+                logger.error(f"FantasyNerds API returned {response.status_code}: {error_text}")
+                try:
+                    error_json = response.json()
+                    error_msg = error_json.get('message', error_json.get('error', error_text))
+                except:
+                    error_msg = error_text
+                raise requests.exceptions.HTTPError(
+                    f"API returned {response.status_code}: {error_msg}",
+                    response=response
+                )
+            
+            # Check if response has content
+            if not response.text or not response.text.strip():
+                logger.error("FantasyNerds API returned empty response")
+                raise ValueError("Empty response from FantasyNerds API")
+            
+            # Parse JSON
+            try:
+                data = response.json()
+                if not isinstance(data, dict):
+                    logger.error(f"Response is not a dictionary: {type(data)}")
+                    raise ValueError(f"Expected dictionary, got {type(data)}")
+                
+                charts = data.get('charts', {})
+                logger.info(f"Successfully fetched depth charts from FantasyNerds. Found {len(charts)} teams")
+                return data
+            except (json.JSONDecodeError, ValueError) as e:
+                response_preview = response.text[:500] if response.text else "(empty)"
+                logger.error(f"Failed to decode JSON from FantasyNerds API: {e}")
+                logger.error(f"Response preview: {response_preview}")
+                raise ValueError(f"Invalid JSON response from FantasyNerds API. Status: {response.status_code}, Error: {str(e)}")
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching depth charts from FantasyNerds: {e}")
+            raise
+        except ValueError as e:
+            logger.error(f"Error parsing response from FantasyNerds: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error fetching depth charts: {e}")
+            raise
 

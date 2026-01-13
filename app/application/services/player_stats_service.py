@@ -1,0 +1,152 @@
+"""
+Service for calculating player statistics and OVER/UNDER history.
+"""
+import logging
+from typing import Dict, Any, Optional, List
+
+from app.domain.ports.nba_api_port import NBAPort
+
+logger = logging.getLogger(__name__)
+
+
+class PlayerStatsService:
+    """
+    Service for calculating player statistics based on game logs.
+    """
+    
+    def __init__(self, nba_port: NBAPort):
+        """
+        Initialize the service.
+        
+        Args:
+            nba_port: Port for NBA API integration
+        """
+        self.nba_api = nba_port
+    
+    def calculate_over_under_history(self, player_id: int, points_line: float, 
+                                    num_games: int = 10, player_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Calculate OVER/UNDER history for a player based on their last N games.
+        
+        Args:
+            player_id: Player ID (may be FantasyNerds ID, will try to find NBA ID if needed)
+            points_line: Points line from odds (e.g., 22.5)
+            num_games: Number of recent games to analyze (default: 10)
+            player_name: Player name (optional, used to find NBA player ID if player_id doesn't work)
+            
+        Returns:
+            Dictionary with:
+            - over_count: Number of games where player scored OVER the line
+            - under_count: Number of games where player scored UNDER the line
+            - total_games: Total number of games analyzed
+            - over_percentage: Percentage of games that were OVER
+            - under_percentage: Percentage of games that were UNDER
+            - games: List of last N games with their points and OVER/UNDER result
+        """
+        try:
+            # Log what we're trying
+            logger.info(f"[OVER/UNDER] Calculating history for player_id={player_id}, player_name={player_name}, points_line={points_line}")
+            
+            # If we have player_name, try to find NBA player ID first
+            # FantasyNerds IDs are different from NBA official IDs
+            nba_player_id = None
+            if player_name:
+                logger.info(f"[OVER/UNDER] Player ID {player_id} is from FantasyNerds, searching for NBA official ID by name: {player_name}")
+                nba_player_id = self.nba_api.find_nba_player_id_by_name(player_name)
+                
+                if nba_player_id:
+                    logger.info(f"[OVER/UNDER] Found NBA player ID {nba_player_id} for {player_name} (FantasyNerds ID was {player_id})")
+                else:
+                    logger.warning(f"[OVER/UNDER] Could not find NBA player ID for {player_name}, will try with FantasyNerds ID {player_id}")
+            
+            # Try with NBA player ID first if found, otherwise use provided player_id
+            target_player_id = nba_player_id if nba_player_id else player_id
+            logger.info(f"[OVER/UNDER] Using player_id {target_player_id} to fetch games")
+            
+            games = self.nba_api.get_player_last_n_games(target_player_id, n=num_games)
+            
+            # If still no games found and we haven't tried the other ID, try it
+            if not games:
+                if nba_player_id and target_player_id == player_id:
+                    # We tried FantasyNerds ID, now try NBA ID
+                    logger.info(f"[OVER/UNDER] No games found with FantasyNerds ID {player_id}, trying NBA ID {nba_player_id}")
+                    games = self.nba_api.get_player_last_n_games(nba_player_id, n=num_games)
+                elif not nba_player_id and player_name:
+                    # We tried FantasyNerds ID, now try to find NBA ID by name
+                    logger.info(f"[OVER/UNDER] No games found with player_id {player_id}, trying to find NBA player ID by name: {player_name}")
+                    nba_player_id = self.nba_api.find_nba_player_id_by_name(player_name)
+                    
+                    if nba_player_id and nba_player_id != player_id:
+                        logger.info(f"[OVER/UNDER] Found NBA player ID {nba_player_id} for {player_name}, trying again...")
+                        games = self.nba_api.get_player_last_n_games(nba_player_id, n=num_games)
+            
+            if not games:
+                logger.warning(f"No games found for player {player_id}")
+                return {
+                    'over_count': 0,
+                    'under_count': 0,
+                    'total_games': 0,
+                    'over_percentage': 0.0,
+                    'under_percentage': 0.0,
+                    'games': []
+                }
+            
+            over_count = 0
+            under_count = 0
+            games_with_result = []
+            
+            for game in games:
+                # Get points scored in this game
+                # The column name in nba_api is usually 'PTS' or 'pts'
+                points = None
+                if 'PTS' in game:
+                    points = float(game['PTS']) if game['PTS'] is not None else None
+                elif 'pts' in game:
+                    points = float(game['pts']) if game['pts'] is not None else None
+                elif 'POINTS' in game:
+                    points = float(game['POINTS']) if game['POINTS'] is not None else None
+                
+                if points is not None:
+                    # Determine if OVER or UNDER
+                    if points > points_line:
+                        over_count += 1
+                        result = 'OVER'
+                    elif points < points_line:
+                        under_count += 1
+                        result = 'UNDER'
+                    else:
+                        # Exactly equal to line (push) - count as neither
+                        result = 'PUSH'
+                    
+                    games_with_result.append({
+                        'game_date': game.get('GAME_DATE', game.get('game_date', '')),
+                        'points': points,
+                        'result': result,
+                        'opponent': game.get('MATCHUP', game.get('matchup', ''))
+                    })
+            
+            total_games = len(games_with_result)
+            over_percentage = (over_count / total_games * 100) if total_games > 0 else 0.0
+            under_percentage = (under_count / total_games * 100) if total_games > 0 else 0.0
+            
+            return {
+                'over_count': over_count,
+                'under_count': under_count,
+                'total_games': total_games,
+                'over_percentage': round(over_percentage, 1),
+                'under_percentage': round(under_percentage, 1),
+                'games': games_with_result
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating OVER/UNDER history for player {player_id}: {e}", exc_info=True)
+            return {
+                'over_count': 0,
+                'under_count': 0,
+                'total_games': 0,
+                'over_percentage': 0.0,
+                'under_percentage': 0.0,
+                'games': [],
+                'error': str(e)
+            }
+

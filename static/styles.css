@@ -320,7 +320,7 @@ header h1 {
     width: 100%;
     min-width: 0;
     overflow-x: auto;
-    align-items: start;
+    align-items: stretch;
 }
 
 .position-card {
@@ -336,6 +336,8 @@ header h1 {
     flex-direction: column;
     box-sizing: border-box;
     max-width: 100%;
+    min-height: 200px;
+    height: 100%;
 }
 
 .position-card:hover {
@@ -371,6 +373,39 @@ header h1 {
     overflow-wrap: break-word;
     hyphens: auto;
     line-height: 1.2;
+}
+
+.player-points {
+    font-size: 0.9em;
+    font-weight: 700;
+    color: #667eea;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.over-under-history {
+    margin: 6px 0;
+    padding: 6px;
+    background: #f0f0f0;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.over-under-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.75em;
+}
+
+.over-stat {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.under-stat {
+    color: #dc3545;
+    font-weight: 600;
 }
 
 .player-id {

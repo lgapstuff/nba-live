@@ -1,6 +1,7 @@
 """
 The Odds API HTTP client.
 """
+import json
 import requests
 import logging
 from typing import List, Dict, Any
@@ -66,6 +67,8 @@ class OddsAPIClient(OddsAPIPort):
                               odds_format: str = "american") -> Dict[str, Any]:
         """
         Get player points odds for a specific event.
+        Uses the event-specific endpoint which supports player_points market.
+        Filters to only FanDuel bookmaker.
         
         Args:
             event_id: Event identifier from The Odds API
@@ -74,9 +77,11 @@ class OddsAPIClient(OddsAPIPort):
             odds_format: Odds format (default: "american")
             
         Returns:
-            Dictionary with odds information
+            Dictionary with odds information (only FanDuel bookmaker)
         """
         try:
+            # Use the event-specific endpoint which supports player_points market
+            # The general /odds endpoint doesn't support player_points
             url = f"{self.base_url}/v4/sports/basketball_nba/events/{event_id}/odds"
             params = {
                 'apiKey': self.api_key,
@@ -85,15 +90,90 @@ class OddsAPIClient(OddsAPIPort):
                 'oddsFormat': odds_format
             }
             
-            response = requests.get(url, params=params, timeout=10)
+            logger.info(f"Fetching player_points odds from The Odds API for event {event_id}: {url}")
+            logger.debug(f"Request params: {params}")
+            response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             
-            return response.json()
+            # Get event data with odds
+            event_data = response.json()
             
+            if not event_data:
+                logger.warning(f"Empty response for event {event_id}")
+                return {}
+            
+            logger.info(f"Received odds data for event {event_id}: {event_data.get('away_team')} @ {event_data.get('home_team')}")
+            
+            # Log the complete raw response from The Odds API
+            logger.info(f"[ODDS API] Raw response for event {event_id}:")
+            logger.info(f"[ODDS API] {json.dumps(event_data, indent=2, default=str)}")
+            
+            # Check what bookmakers are available
+            all_bookmakers = event_data.get('bookmakers', [])
+            if not all_bookmakers:
+                logger.warning(f"No bookmakers found for event {event_id}")
+                return {}
+            
+            bookmaker_keys = [b.get('key', '') for b in all_bookmakers]
+            logger.info(f"Available bookmakers for event {event_id}: {bookmaker_keys}")
+            
+            # Filter to only FanDuel bookmaker
+            filtered_bookmakers = []
+            for bookmaker in all_bookmakers:
+                bookmaker_key = bookmaker.get('key', '').lower()
+                logger.debug(f"Checking bookmaker: {bookmaker_key}")
+                if bookmaker_key == 'fanduel':
+                    # Check if FanDuel has player_points market
+                    markets_list = bookmaker.get('markets', [])
+                    market_keys = [m.get('key', '') for m in markets_list]
+                    logger.info(f"FanDuel markets available: {market_keys}")
+                    
+                    # Filter to only player_points market
+                    player_points_markets = [m for m in markets_list if m.get('key') == 'player_points']
+                    if player_points_markets:
+                        # Create a bookmaker dict with only player_points market
+                        fanduel_with_player_points = {
+                            **bookmaker,
+                            'markets': player_points_markets
+                        }
+                        filtered_bookmakers.append(fanduel_with_player_points)
+                        logger.info(f"Found FanDuel player_points odds for event {event_id} with {len(player_points_markets[0].get('outcomes', []))} outcomes")
+                    else:
+                        logger.warning(f"FanDuel found but no player_points market available. Available markets: {market_keys}")
+                    break  # Only need one FanDuel entry
+            
+            if not filtered_bookmakers:
+                logger.warning(f"No FanDuel player_points odds found for event {event_id}. Available bookmakers: {bookmaker_keys}")
+                return {}
+            
+            # Return event data with only FanDuel bookmaker
+            result = {
+                'id': event_data.get('id'),
+                'sport_key': event_data.get('sport_key'),
+                'sport_title': event_data.get('sport_title'),
+                'commence_time': event_data.get('commence_time'),
+                'home_team': event_data.get('home_team'),
+                'away_team': event_data.get('away_team'),
+                'bookmakers': filtered_bookmakers
+            }
+            
+            logger.info(f"Successfully retrieved FanDuel player_points odds for event {event_id}")
+            return result
+            
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error fetching odds from The Odds API: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                try:
+                    error_body = e.response.json()
+                    logger.error(f"Response body: {error_body}")
+                except:
+                    logger.error(f"Response body (text): {e.response.text[:500]}")
+            return {}
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching odds from The Odds API: {e}")
+            logger.error(f"Request error fetching odds from The Odds API: {e}")
             return {}
         except Exception as e:
-            logger.error(f"Unexpected error fetching odds: {e}")
+            logger.error(f"Unexpected error fetching odds: {e}", exc_info=True)
             return {}
 

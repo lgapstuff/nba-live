@@ -27,7 +27,7 @@ class LineupRepository:
     def save_lineup_for_game(self, game_id: str, lineup_date: str, team_abbr: str, 
                              position: str, player_id: int, player_name: str, 
                              confirmed: bool = False, player_photo_url: Optional[str] = None,
-                             player_status: str = 'STARTER') -> None:
+                             player_status: str = 'STARTER', points_line: Optional[float] = None) -> None:
         """
         Save a single lineup entry for a game.
         
@@ -50,19 +50,51 @@ class LineupRepository:
                 cursor.execute("""
                     INSERT INTO game_lineups (
                         game_id, lineup_date, team_abbr, position,
-                        player_id, player_name, player_photo_url, confirmed, player_status
+                        player_id, player_name, player_photo_url, confirmed, player_status, points_line
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON DUPLICATE KEY UPDATE
                         player_id = VALUES(player_id),
                         player_name = VALUES(player_name),
                         player_photo_url = VALUES(player_photo_url),
                         confirmed = VALUES(confirmed),
-                        player_status = VALUES(player_status),
+                        -- Only update player_status if current status is not STARTER
+                        -- This preserves STARTER status when odds are loaded after lineups
+                        player_status = CASE 
+                            WHEN player_status = 'STARTER' THEN 'STARTER'
+                            ELSE VALUES(player_status)
+                        END,
+                        points_line = COALESCE(VALUES(points_line), points_line),
                         updated_at = CURRENT_TIMESTAMP
                 """, (game_id, lineup_date, team_abbr, position, 
-                      player_id, player_name, player_photo_url, 1 if confirmed else 0, player_status))
+                      player_id, player_name, player_photo_url, 1 if confirmed else 0, player_status, points_line))
+                conn.commit()
+    
+    def update_points_line_for_player(self, game_id: str, lineup_date: str, 
+                                      team_abbr: str, player_id: int, 
+                                      points_line: Optional[float]) -> None:
+        """
+        Update points_line for a player in the lineup.
+        
+        Args:
+            game_id: Game identifier
+            lineup_date: Date of the lineup
+            team_abbr: Team abbreviation
+            player_id: Player ID
+            points_line: Points line from odds
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE game_lineups
+                    SET points_line = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE game_id = %s
+                      AND lineup_date = %s
+                      AND team_abbr = %s
+                      AND player_id = %s
+                """, (points_line, game_id, lineup_date, team_abbr, player_id))
                 conn.commit()
     
     def save_lineups_for_game(self, game_id: str, lineup_date: str, 
@@ -197,7 +229,7 @@ class LineupRepository:
                     SELECT 
                         gl.game_id, gl.team_abbr, gl.position,
                         gl.player_id, gl.player_name, gl.player_photo_url, gl.confirmed, gl.player_status,
-                        gl.lineup_date,
+                        gl.lineup_date, gl.points_line,
                         g.home_team, g.away_team, g.game_date, g.game_time,
                         g.home_team_name, g.away_team_name,
                         g.home_team_logo_url, g.away_team_logo_url
@@ -232,18 +264,32 @@ class LineupRepository:
                     if team_abbr not in result[game_id]['lineups']:
                         result[game_id]['lineups'][team_abbr] = {}
                     
+                    position = row['position']
+                    player_status = row.get('player_status', 'BENCH')
+                    
                     # Get photo URL - may be None if FantasyNerds CDN doesn't have the photo
                     photo_url = row['player_photo_url']
                     if not photo_url:
                         photo_url = get_player_photo_url(row['player_id'])
                     
-                    result[game_id]['lineups'][team_abbr][row['position']] = {
+                    player_data = {
                         'player_id': row['player_id'],
                         'player_name': row['player_name'],
                         'player_photo_url': photo_url,  # May be None if photo unavailable
                         'confirmed': bool(row['confirmed']),
-                        'player_status': row.get('player_status', 'BENCH')
+                        'player_status': player_status,
+                        'points_line': float(row['points_line']) if row.get('points_line') is not None else None
                     }
+                    
+                    # Handle BENCH players (position format: 'BENCH-{player_id}')
+                    if position.startswith('BENCH-'):
+                        # Store BENCH players in a list under 'BENCH' key
+                        if 'BENCH' not in result[game_id]['lineups'][team_abbr]:
+                            result[game_id]['lineups'][team_abbr]['BENCH'] = []
+                        result[game_id]['lineups'][team_abbr]['BENCH'].append(player_data)
+                    else:
+                        # Regular position (PG, SG, SF, PF, C)
+                        result[game_id]['lineups'][team_abbr][position] = player_data
                 
                 return list(result.values())
     
@@ -263,7 +309,7 @@ class LineupRepository:
                     SELECT 
                         gl.game_id, gl.team_abbr, gl.position,
                         gl.player_id, gl.player_name, gl.player_photo_url, gl.confirmed, gl.player_status,
-                        gl.lineup_date,
+                        gl.lineup_date, gl.points_line,
                         g.home_team, g.away_team,
                         g.home_team_name, g.away_team_name,
                         g.home_team_logo_url, g.away_team_logo_url,
@@ -305,13 +351,25 @@ class LineupRepository:
                     if not photo_url:
                         photo_url = get_player_photo_url(row['player_id'])
                     
-                    result['lineups'][team_abbr][row['position']] = {
+                    position = row['position']
+                    player_status = row.get('player_status', 'BENCH')
+                    
+                    player_data = {
                         'player_id': row['player_id'],
                         'player_name': row['player_name'],
                         'player_photo_url': photo_url,  # May be None if photo unavailable
                         'confirmed': bool(row['confirmed']),
-                        'player_status': row.get('player_status', 'BENCH')
+                        'player_status': player_status,
+                        'points_line': float(row['points_line']) if row.get('points_line') is not None else None
                     }
+                    
+                    # Handle BENCH players (position format: 'BENCH-{player_id}')
+                    if position.startswith('BENCH-'):
+                        if 'BENCH' not in result['lineups'][team_abbr]:
+                            result['lineups'][team_abbr]['BENCH'] = []
+                        result['lineups'][team_abbr]['BENCH'].append(player_data)
+                    else:
+                        result['lineups'][team_abbr][position] = player_data
                 
                 return result
     
@@ -330,3 +388,212 @@ class LineupRepository:
                     WHERE game_id = %s AND lineup_date = %s
                 """, (game_id, lineup_date))
                 conn.commit()
+    
+    def delete_lineups_for_team_game(self, game_id: str, lineup_date: str, team_abbr: str) -> None:
+        """
+        Delete all lineups for a specific team, game and date.
+        
+        Args:
+            game_id: Game identifier
+            lineup_date: Date of the lineup
+            team_abbr: Team abbreviation
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    DELETE FROM game_lineups
+                    WHERE game_id = %s AND lineup_date = %s AND team_abbr = %s
+                """, (game_id, lineup_date, team_abbr))
+                conn.commit()
+    
+    def save_bench_player_for_game(self, game_id: str, lineup_date: str, team_abbr: str,
+                                   player_id: int, player_name: str, 
+                                   player_photo_url: Optional[str] = None,
+                                   points_line: Optional[float] = None) -> None:
+        """
+        Save a BENCH player for a game.
+        Uses a composite position 'BENCH-{player_id}' to ensure uniqueness.
+        
+        Args:
+            game_id: Game identifier
+            lineup_date: Date of the lineup
+            team_abbr: Team abbreviation
+            player_id: Player ID
+            player_name: Player name
+            player_photo_url: URL to player photo
+            points_line: Points line from odds (optional)
+        """
+        if not player_photo_url and player_id:
+            player_photo_url = get_player_photo_url(player_id)
+        
+        # Use composite position to ensure uniqueness for BENCH players
+        position = f'BENCH-{player_id}'
+        
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO game_lineups (
+                        game_id, lineup_date, team_abbr, position,
+                        player_id, player_name, player_photo_url, confirmed, player_status, points_line
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        player_id = VALUES(player_id),
+                        player_name = VALUES(player_name),
+                        player_photo_url = VALUES(player_photo_url),
+                        confirmed = 0,
+                        player_status = 'BENCH',
+                        points_line = VALUES(points_line),
+                        updated_at = CURRENT_TIMESTAMP
+                """, (game_id, lineup_date, team_abbr, position, 
+                      player_id, player_name, player_photo_url, 0, 'BENCH', points_line))
+                conn.commit()
+    
+    def save_depth_chart(self, team_abbr: str, season: int, depth_chart: Dict[str, List[Dict[str, Any]]]) -> int:
+        """
+        Save depth chart for a team.
+        Players are saved with position and depth, but not as part of a game lineup.
+        These are used to identify which team a player belongs to when matching with odds.
+        
+        Args:
+            team_abbr: Team abbreviation (e.g., "SA", "DEN")
+            season: Season year (e.g., 2021)
+            depth_chart: Dictionary with positions as keys and list of players as values
+                        Example: {"PG": [{"playerId": 450, "name": "Keldon Johnson", ...}], ...}
+        
+        Returns:
+            Number of players saved
+        """
+        saved_count = 0
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                # First, delete existing depth chart for this team and season
+                cursor.execute("""
+                    DELETE FROM team_depth_charts
+                    WHERE team_abbr = %s AND season = %s
+                """, (team_abbr, season))
+                
+                # Insert all players from depth chart
+                for position, players in depth_chart.items():
+                    for player_data in players:
+                        try:
+                            player_id = int(player_data.get('playerId', 0))
+                            player_name = player_data.get('name', '')
+                            depth = int(player_data.get('depth', 0))
+                            
+                            if not player_name:
+                                continue
+                            
+                            player_photo_url = get_player_photo_url(player_id) if player_id > 0 else None
+                            
+                            cursor.execute("""
+                                INSERT INTO team_depth_charts (
+                                    team_abbr, season, position, depth,
+                                    player_id, player_name, player_photo_url
+                                ) VALUES (
+                                    %s, %s, %s, %s, %s, %s, %s
+                                )
+                                ON DUPLICATE KEY UPDATE
+                                    player_name = VALUES(player_name),
+                                    player_photo_url = VALUES(player_photo_url),
+                                    depth = VALUES(depth),
+                                    updated_at = CURRENT_TIMESTAMP
+                            """, (team_abbr, season, position, depth, 
+                                  player_id, player_name, player_photo_url))
+                            saved_count += 1
+                        except Exception as e:
+                            logger.error(f"Error saving depth chart player: {e}")
+                            continue
+                
+                conn.commit()
+                return saved_count
+    
+    def get_players_by_team(self, team_abbr: str, season: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get all players for a team from depth charts.
+        Used to match players from odds with their correct team.
+        
+        Args:
+            team_abbr: Team abbreviation
+            season: Season year (optional, uses latest if not provided)
+        
+        Returns:
+            List of player dictionaries with team, position, depth, etc.
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                if season:
+                    cursor.execute("""
+                        SELECT team_abbr, position, depth, player_id, player_name, player_photo_url
+                        FROM team_depth_charts
+                        WHERE team_abbr = %s AND season = %s
+                        ORDER BY position, depth
+                    """, (team_abbr, season))
+                else:
+                    # Get latest season
+                    cursor.execute("""
+                        SELECT team_abbr, position, depth, player_id, player_name, player_photo_url
+                        FROM team_depth_charts
+                        WHERE team_abbr = %s
+                        AND season = (SELECT MAX(season) FROM team_depth_charts WHERE team_abbr = %s)
+                        ORDER BY position, depth
+                    """, (team_abbr, team_abbr))
+                
+                rows = cursor.fetchall()
+                return [
+                    {
+                        'team_abbr': row['team_abbr'],
+                        'position': row['position'],
+                        'depth': row['depth'],
+                        'player_id': row['player_id'],
+                        'player_name': row['player_name'],
+                        'player_photo_url': row['player_photo_url']
+                    }
+                    for row in rows
+                ]
+    
+    def get_all_teams_players(self, season: Optional[int] = None) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get all players for all teams from depth charts.
+        Used to match players from odds with their correct team.
+        
+        Args:
+            season: Season year (optional, uses latest if not provided)
+        
+        Returns:
+            Dictionary with team_abbr as key and list of players as value
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                if season:
+                    cursor.execute("""
+                        SELECT team_abbr, position, depth, player_id, player_name, player_photo_url
+                        FROM team_depth_charts
+                        WHERE season = %s
+                        ORDER BY team_abbr, position, depth
+                    """, (season,))
+                else:
+                    # Get latest season
+                    cursor.execute("""
+                        SELECT team_abbr, position, depth, player_id, player_name, player_photo_url
+                        FROM team_depth_charts
+                        WHERE season = (SELECT MAX(season) FROM team_depth_charts)
+                        ORDER BY team_abbr, position, depth
+                    """)
+                
+                rows = cursor.fetchall()
+                result = {}
+                for row in rows:
+                    team_abbr = row['team_abbr']
+                    if team_abbr not in result:
+                        result[team_abbr] = []
+                    result[team_abbr].append({
+                        'team_abbr': team_abbr,
+                        'position': row['position'],
+                        'depth': row['depth'],
+                        'player_id': row['player_id'],
+                        'player_name': row['player_name'],
+                        'player_photo_url': row['player_photo_url']
+                    })
+                return result

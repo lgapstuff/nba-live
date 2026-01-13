@@ -46,4 +46,28 @@ class OddsController:
                 "success": False,
                 "message": f"Internal server error: {str(e)}"
             }), 500
+    
+    def import_odds_for_date(self, date: str) -> Tuple[Dict[str, Any], int]:
+        """
+        Import odds for all games of a specific date.
+        Players found in odds are saved as BENCH if not in lineup,
+        or updated to STARTER if they're already in the lineup.
+        
+        Args:
+            date: Date in YYYY-MM-DD format
+            
+        Returns:
+            JSON response and status code
+        """
+        try:
+            result = self.odds_service.import_odds_for_date(date)
+            status_code = 200 if result.get('success', False) else 400
+            return jsonify(result), status_code
+            
+        except Exception as e:
+            logger.error(f"Error in import_odds_for_date: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "message": f"Internal server error: {str(e)}"
+            }), 500
 
