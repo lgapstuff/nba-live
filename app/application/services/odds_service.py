@@ -624,12 +624,13 @@ class OddsService:
                             lineup_date=game_date,
                             team_abbr=matched_starter['team'],
                             player_id=matched_starter['player_id'],  # Keep FantasyNerds ID in DB for reference
-                            points_line=points_line
+                            points_line=points_line,
+                            over_under_history=over_under_history
                         )
                     except Exception as e:
                         logger.warning(f"Could not update points_line for STARTER player {matched_starter['player_name']}: {e}")
                 
-                # Calculate OVER/UNDER history using official NBA ID
+                # Calculate OVER/UNDER history using official NBA ID (only if local game logs available)
                 over_under_history = None
                 if self.player_stats_service and player_odds_data['odds']:
                     try:
@@ -637,14 +638,20 @@ class OddsService:
                         points_line = first_odds_entry.get('points_line')
                         
                         if points_line and player_id_to_use:
-                            logger.info(f"[ODDS] Calculating OVER/UNDER for STARTER {player_name} using NBA ID {player_id_to_use}")
+                            logger.debug(f"[ODDS] Calculating OVER/UNDER for STARTER {player_name} using NBA ID {player_id_to_use} (local-only)")
+                            # Use local-only mode to avoid NBA API calls during odds loading
                             over_under_history = self.player_stats_service.calculate_over_under_history(
                                 player_id=player_id_to_use,
                                 points_line=points_line,
-                                num_games=10,
-                                player_name=matched_starter['player_name']
+                                num_games=25,
+                                player_name=matched_starter['player_name'],
+                                use_local_only=True  # Only use local game logs, no NBA API calls
                             )
-                            logger.debug(f"OVER/UNDER history for {matched_starter['player_name']}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                            if over_under_history.get('total_games', 0) > 0:
+                                logger.debug(f"OVER/UNDER history for {matched_starter['player_name']}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                            else:
+                                logger.debug(f"No local game logs available for {matched_starter['player_name']}, skipping OVER/UNDER calculation")
+                                over_under_history = None  # Don't include if no games
                     except Exception as e:
                         logger.warning(f"Could not calculate OVER/UNDER history for player {matched_starter['player_name']}: {e}")
                 
@@ -682,7 +689,7 @@ class OddsService:
                     
                     logger.info(f"[ODDS] Matched {player_name} from odds with {team_player.get('player_name', player_name)} from {player_source} (NBA ID: {player_id}, Team: {team_abbr})")
                     
-                    # Calculate OVER/UNDER history if player_stats_service is available
+                    # Calculate OVER/UNDER history if player_stats_service is available (only if local game logs available)
                     over_under_history = None
                     if self.player_stats_service and player_odds_data['odds']:
                         try:
@@ -690,13 +697,20 @@ class OddsService:
                             points_line = first_odds_entry.get('points_line')
                             
                             if points_line and player_id:
+                                logger.debug(f"[ODDS] Calculating OVER/UNDER for BENCH {player_name} using NBA ID {player_id} (local-only)")
+                                # Use local-only mode to avoid NBA API calls during odds loading
                                 over_under_history = self.player_stats_service.calculate_over_under_history(
                                     player_id=player_id,
                                     points_line=points_line,
-                                    num_games=10,
-                                    player_name=player_name
+                                    num_games=25,
+                                    player_name=player_name,
+                                    use_local_only=True  # Only use local game logs, no NBA API calls
                                 )
-                                logger.debug(f"OVER/UNDER history for {player_name}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                                if over_under_history.get('total_games', 0) > 0:
+                                    logger.debug(f"OVER/UNDER history for {player_name}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                                else:
+                                    logger.debug(f"No local game logs available for {player_name}, skipping OVER/UNDER calculation")
+                                    over_under_history = None  # Don't include if no games
                         except Exception as e:
                             logger.warning(f"Could not calculate OVER/UNDER history for player {player_name}: {e}")
                     
@@ -735,7 +749,8 @@ class OddsService:
                                 player_id=player_id,
                                 player_name=player_name,
                                 player_photo_url=team_player.get('player_photo_url'),
-                                points_line=points_line
+                                points_line=points_line,
+                                over_under_history=over_under_history
                             )
                         except Exception as e:
                             logger.warning(f"Could not save BENCH player {player_name} for team {team_abbr}: {e}")

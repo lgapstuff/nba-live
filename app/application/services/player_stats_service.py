@@ -28,7 +28,8 @@ class PlayerStatsService:
         self.game_log_service = game_log_service
     
     def calculate_over_under_history(self, player_id: int, points_line: float, 
-                                    num_games: int = 10, player_name: Optional[str] = None) -> Dict[str, Any]:
+                                    num_games: int = 10, player_name: Optional[str] = None,
+                                    use_local_only: bool = False) -> Dict[str, Any]:
         """
         Calculate OVER/UNDER history for a player based on their last N games.
         
@@ -37,6 +38,7 @@ class PlayerStatsService:
             points_line: Points line from odds (e.g., 22.5)
             num_games: Number of recent games to analyze (default: 10)
             player_name: Player name (optional, used to find NBA player ID if player_id doesn't work)
+            use_local_only: If True, only use local game logs (no NBA API calls)
             
         Returns:
             Dictionary with:
@@ -49,13 +51,76 @@ class PlayerStatsService:
         """
         try:
             # Log what we're trying
-            logger.info(f"[OVER/UNDER] Calculating history for player_id={player_id}, player_name={player_name}, points_line={points_line}")
+            logger.info(f"[OVER/UNDER] Calculating history for player_id={player_id}, player_name={player_name}, points_line={points_line}, use_local_only={use_local_only}")
             
+            # Try to use local game logs first (optimization)
+            if self.game_log_service:
+                try:
+                    # If we have player_name, try to find NBA player ID first for local lookup
+                    nba_player_id = None
+                    if player_name and not use_local_only:
+                        # Only try to find NBA ID if we're not in local-only mode
+                        logger.debug(f"[OVER/UNDER] Searching for NBA official ID by name: {player_name}")
+                        nba_player_id = self.nba_api.find_nba_player_id_by_name(player_name)
+                        if nba_player_id:
+                            logger.debug(f"[OVER/UNDER] Found NBA player ID {nba_player_id} for {player_name}")
+                    
+                    # Try with NBA player ID first if found, otherwise use provided player_id
+                    target_player_id = nba_player_id if nba_player_id else player_id
+                    
+                    logger.debug(f"[OVER/UNDER] Attempting to use local game logs for player {target_player_id}")
+                    result = self.game_log_service.calculate_over_under_from_local(
+                        target_player_id, points_line, num_games
+                    )
+                    if result.get('total_games', 0) > 0:
+                        logger.info(f"[OVER/UNDER] Using local game logs: {result.get('over_count')} OVER, {result.get('under_count')} UNDER")
+                        return result
+                    else:
+                        # If local-only mode, return empty result
+                        if use_local_only:
+                            logger.debug(f"[OVER/UNDER] No local game logs found for player {target_player_id} (local-only mode)")
+                            return {
+                                'over_count': 0,
+                                'under_count': 0,
+                                'total_games': 0,
+                                'over_percentage': 0.0,
+                                'under_percentage': 0.0,
+                                'games': [],
+                                'source': 'local_db'
+                            }
+                        logger.debug(f"[OVER/UNDER] No local game logs found, falling back to NBA API")
+                except Exception as e:
+                    logger.warning(f"[OVER/UNDER] Error using local game logs: {e}")
+                    if use_local_only:
+                        return {
+                            'over_count': 0,
+                            'under_count': 0,
+                            'total_games': 0,
+                            'over_percentage': 0.0,
+                            'under_percentage': 0.0,
+                            'games': [],
+                            'error': str(e),
+                            'source': 'local_db'
+                        }
+            
+            # If use_local_only is True, don't fallback to NBA API
+            if use_local_only:
+                logger.debug(f"[OVER/UNDER] Local-only mode: skipping NBA API fallback")
+                return {
+                    'over_count': 0,
+                    'under_count': 0,
+                    'total_games': 0,
+                    'over_percentage': 0.0,
+                    'under_percentage': 0.0,
+                    'games': [],
+                    'source': 'local_db'
+                }
+            
+            # Fallback to NBA API (only if not in local-only mode)
             # If we have player_name, try to find NBA player ID first
-            # FantasyNerds IDs are different from NBA official IDs
             nba_player_id = None
             if player_name:
-                logger.info(f"[OVER/UNDER] Player ID {player_id} is from FantasyNerds, searching for NBA official ID by name: {player_name}")
+                logger.debug(f"[OVER/UNDER] Player ID {player_id} is from FantasyNerds, searching for NBA official ID by name: {player_name}")
                 nba_player_id = self.nba_api.find_nba_player_id_by_name(player_name)
                 
                 if nba_player_id:
@@ -65,25 +130,8 @@ class PlayerStatsService:
             
             # Try with NBA player ID first if found, otherwise use provided player_id
             target_player_id = nba_player_id if nba_player_id else player_id
-            logger.info(f"[OVER/UNDER] Using player_id {target_player_id} to fetch games")
+            logger.info(f"[OVER/UNDER] Using player_id {target_player_id} to fetch games from NBA API")
             
-            # Try to use local game logs first (optimization)
-            if self.game_log_service:
-                try:
-                    logger.info(f"[OVER/UNDER] Attempting to use local game logs for player {target_player_id}")
-                    result = self.game_log_service.calculate_over_under_from_local(
-                        target_player_id, points_line, num_games
-                    )
-                    if result.get('total_games', 0) > 0:
-                        logger.info(f"[OVER/UNDER] Using local game logs: {result.get('over_count')} OVER, {result.get('under_count')} UNDER")
-                        return result
-                    else:
-                        logger.info(f"[OVER/UNDER] No local game logs found, falling back to NBA API")
-                except Exception as e:
-                    logger.warning(f"[OVER/UNDER] Error using local game logs: {e}, falling back to NBA API")
-            
-            # Fallback to NBA API
-            logger.info(f"[OVER/UNDER] Fetching games from NBA API for player {target_player_id}")
             games = self.nba_api.get_player_last_n_games(target_player_id, n=num_games)
             
             # If still no games found and we haven't tried the other ID, try it
@@ -109,7 +157,8 @@ class PlayerStatsService:
                     'total_games': 0,
                     'over_percentage': 0.0,
                     'under_percentage': 0.0,
-                    'games': []
+                    'games': [],
+                    'source': 'nba_api'
                 }
             
             over_count = 0
@@ -156,7 +205,8 @@ class PlayerStatsService:
                 'total_games': total_games,
                 'over_percentage': round(over_percentage, 1),
                 'under_percentage': round(under_percentage, 1),
-                'games': games_with_result
+                'games': games_with_result,
+                'source': 'nba_api'
             }
             
         except Exception as e:
@@ -168,6 +218,7 @@ class PlayerStatsService:
                 'over_percentage': 0.0,
                 'under_percentage': 0.0,
                 'games': [],
-                'error': str(e)
+                'error': str(e),
+                'source': 'error'
             }
 

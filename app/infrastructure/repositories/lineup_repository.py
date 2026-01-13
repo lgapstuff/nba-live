@@ -73,9 +73,10 @@ class LineupRepository:
     
     def update_points_line_for_player(self, game_id: str, lineup_date: str, 
                                       team_abbr: str, player_id: int, 
-                                      points_line: Optional[float]) -> None:
+                                      points_line: Optional[float],
+                                      over_under_history: Optional[Dict[str, Any]] = None) -> None:
         """
-        Update points_line for a player in the lineup.
+        Update points_line and optionally over_under_history for a player in the lineup.
         
         Args:
             game_id: Game identifier
@@ -83,18 +84,33 @@ class LineupRepository:
             team_abbr: Team abbreviation
             player_id: Player ID
             points_line: Points line from odds
+            over_under_history: OVER/UNDER history dictionary (optional)
         """
+        import json
         with self.db.get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE game_lineups
-                    SET points_line = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE game_id = %s
-                      AND lineup_date = %s
-                      AND team_abbr = %s
-                      AND player_id = %s
-                """, (points_line, game_id, lineup_date, team_abbr, player_id))
+                if over_under_history:
+                    over_under_json = json.dumps(over_under_history)
+                    cursor.execute("""
+                        UPDATE game_lineups
+                        SET points_line = %s,
+                            over_under_history = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE game_id = %s
+                          AND lineup_date = %s
+                          AND team_abbr = %s
+                          AND player_id = %s
+                    """, (points_line, over_under_json, game_id, lineup_date, team_abbr, player_id))
+                else:
+                    cursor.execute("""
+                        UPDATE game_lineups
+                        SET points_line = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE game_id = %s
+                          AND lineup_date = %s
+                          AND team_abbr = %s
+                          AND player_id = %s
+                    """, (points_line, game_id, lineup_date, team_abbr, player_id))
                 conn.commit()
     
     def save_lineups_for_game(self, game_id: str, lineup_date: str, 
@@ -409,7 +425,8 @@ class LineupRepository:
     def save_bench_player_for_game(self, game_id: str, lineup_date: str, team_abbr: str,
                                    player_id: int, player_name: str, 
                                    player_photo_url: Optional[str] = None,
-                                   points_line: Optional[float] = None) -> None:
+                                   points_line: Optional[float] = None,
+                                   over_under_history: Optional[Dict[str, Any]] = None) -> None:
         """
         Save a BENCH player for a game.
         Uses a composite position 'BENCH-{player_id}' to ensure uniqueness.
@@ -422,21 +439,25 @@ class LineupRepository:
             player_name: Player name
             player_photo_url: URL to player photo
             points_line: Points line from odds (optional)
+            over_under_history: OVER/UNDER history dictionary (optional)
         """
+        import json
         if not player_photo_url and player_id:
             player_photo_url = get_player_photo_url(player_id)
         
         # Use composite position to ensure uniqueness for BENCH players
         position = f'BENCH-{player_id}'
         
+        over_under_json = json.dumps(over_under_history) if over_under_history else None
+        
         with self.db.get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO game_lineups (
                         game_id, lineup_date, team_abbr, position,
-                        player_id, player_name, player_photo_url, confirmed, player_status, points_line
+                        player_id, player_name, player_photo_url, confirmed, player_status, points_line, over_under_history
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON DUPLICATE KEY UPDATE
                         player_id = VALUES(player_id),
@@ -445,9 +466,10 @@ class LineupRepository:
                         confirmed = 0,
                         player_status = 'BENCH',
                         points_line = VALUES(points_line),
+                        over_under_history = VALUES(over_under_history),
                         updated_at = CURRENT_TIMESTAMP
                 """, (game_id, lineup_date, team_abbr, position, 
-                      player_id, player_name, player_photo_url, 0, 'BENCH', points_line))
+                      player_id, player_name, player_photo_url, 0, 'BENCH', points_line, over_under_json))
                 conn.commit()
     
     def save_depth_chart(self, team_abbr: str, season: int, depth_chart: Dict[str, List[Dict[str, Any]]]) -> int:

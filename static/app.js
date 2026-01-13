@@ -598,7 +598,7 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
                 ${overUnderHistory}
                 <div class="player-id">ID: ${playerId || 'N/A'}</div>
                 ${statusBadge}
-                ${playerId ? `<button class="show-game-logs-btn" data-player-id="${playerId}" onclick="toggleGameLogs(${playerId}, this)">Ver Últimos 25 Juegos</button>` : ''}
+                ${playerId ? `<button class="show-game-logs-btn" data-player-id="${playerId}" onclick="toggleGameLogs(${playerId}, this)">Ver Últimos Juegos</button>` : ''}
             </div>
         `;
     }).join('');
@@ -651,7 +651,7 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
                 ${overUnderHistory}
                 <div class="player-id">ID: ${playerId || 'N/A'}</div>
                 <span class="status-badge bench">BENCH</span>
-                ${playerId ? `<button class="show-game-logs-btn" data-player-id="${playerId}" onclick="toggleGameLogs(${playerId}, this)">Ver Últimos 25 Juegos</button>` : ''}
+                ${playerId ? `<button class="show-game-logs-btn" data-player-id="${playerId}" onclick="toggleGameLogs(${playerId}, this)">Ver Últimos Juegos</button>` : ''}
             </div>
         `;
     }).join('');
@@ -771,9 +771,11 @@ function showEmptyState(message) {
 
 // Open game logs modal
 window.toggleGameLogs = async function(playerId, buttonElement) {
-    // Get player name from the card
+    // Get player name and points_line from the card
     const playerCard = buttonElement.closest('.position-card');
     const playerName = playerCard ? playerCard.querySelector('.player-name')?.textContent : `Player ${playerId}`;
+    const pointsLineElement = playerCard ? playerCard.querySelector('.player-points') : null;
+    const pointsLine = pointsLineElement ? parseFloat(pointsLineElement.textContent.replace(' pts', '')) : null;
     
     // Create or get modal
     let modal = document.getElementById('game-logs-modal');
@@ -785,7 +787,7 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
             <div class="game-logs-modal-overlay"></div>
             <div class="game-logs-modal-content">
                 <div class="game-logs-modal-header">
-                    <h3 class="game-logs-modal-title">Últimos 25 Juegos</h3>
+                    <h3 class="game-logs-modal-title">Últimos Juegos</h3>
                     <button class="game-logs-modal-close" onclick="closeGameLogsModal()">&times;</button>
                 </div>
                 <div class="game-logs-modal-body">
@@ -806,10 +808,14 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
         });
     }
     
-    // Update player name in modal
+    // Update player name and points line in modal
     const titleElement = modal.querySelector('.game-logs-modal-title');
     if (titleElement) {
-        titleElement.textContent = `${playerName} - Últimos 25 Juegos`;
+        if (pointsLine !== null && !isNaN(pointsLine)) {
+            titleElement.textContent = `${playerName} - Últimos Juegos (Línea: ${pointsLine} pts)`;
+        } else {
+            titleElement.textContent = `${playerName} - Últimos Juegos`;
+        }
     }
     
     // Show modal
@@ -848,51 +854,91 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
                 return dateB - dateA;
             });
             
-            const logsHTML = sortedGames.map(game => {
-                const gameDate = formatGameLogDate(game.game_date);
-                const minutes = game.minutes_played !== null && game.minutes_played !== undefined 
-                    ? parseFloat(game.minutes_played).toFixed(1) 
-                    : 'N/A';
-                const points = game.points !== null && game.points !== undefined 
-                    ? parseFloat(game.points).toFixed(1) 
-                    : 'N/A';
-                const assists = game.assists !== null && game.assists !== undefined 
-                    ? parseInt(game.assists) 
-                    : 'N/A';
-                const rebounds = game.rebounds !== null && game.rebounds !== undefined 
-                    ? parseInt(game.rebounds) 
-                    : 'N/A';
-                
-                return `
-                    <div class="game-log-item">
-                        <div class="game-log-date">${gameDate}</div>
-                        <div class="game-log-stats">
-                            <div class="game-log-stat">
-                                <span class="stat-label">MIN</span>
-                                <span class="stat-value">${minutes}</span>
-                            </div>
-                            <div class="game-log-stat">
-                                <span class="stat-label">PTS</span>
-                                <span class="stat-value">${points}</span>
-                            </div>
-                            <div class="game-log-stat">
-                                <span class="stat-label">AST</span>
-                                <span class="stat-value">${assists}</span>
-                            </div>
-                            <div class="game-log-stat">
-                                <span class="stat-label">REB</span>
-                                <span class="stat-value">${rebounds}</span>
+            // If points_line is available, show only OVER/UNDER
+            if (pointsLine !== null && !isNaN(pointsLine)) {
+                const logsHTML = sortedGames.map(game => {
+                    const gameDate = formatGameLogDate(game.game_date);
+                    const points = game.points !== null && game.points !== undefined 
+                        ? parseFloat(game.points) 
+                        : null;
+                    
+                    if (points === null) {
+                        return '';
+                    }
+                    
+                    const result = points > pointsLine ? 'OVER' : (points < pointsLine ? 'UNDER' : 'PUSH');
+                    const resultClass = result === 'OVER' ? 'over' : (result === 'UNDER' ? 'under' : 'push');
+                    
+                    return `
+                        <div class="game-log-item">
+                            <div class="game-log-date">${gameDate}</div>
+                            <div class="game-log-over-under">
+                                <div class="game-log-points-display">
+                                    <span class="points-value">${points.toFixed(1)}</span>
+                                    <span class="points-vs">vs</span>
+                                    <span class="points-line">${pointsLine.toFixed(1)}</span>
+                                </div>
+                                <div class="game-log-result ${resultClass}">
+                                    ${result}
+                                </div>
                             </div>
                         </div>
+                    `;
+                }).filter(html => html !== '').join('');
+                
+                modalBody.innerHTML = `
+                    <div class="game-logs-list">
+                        ${logsHTML}
                     </div>
                 `;
-            }).join('');
-            
-            modalBody.innerHTML = `
-                <div class="game-logs-list">
-                    ${logsHTML}
-                </div>
-            `;
+            } else {
+                // No points_line, show full stats
+                const logsHTML = sortedGames.map(game => {
+                    const gameDate = formatGameLogDate(game.game_date);
+                    const minutes = game.minutes_played !== null && game.minutes_played !== undefined 
+                        ? parseFloat(game.minutes_played).toFixed(1) 
+                        : 'N/A';
+                    const points = game.points !== null && game.points !== undefined 
+                        ? parseFloat(game.points).toFixed(1) 
+                        : 'N/A';
+                    const assists = game.assists !== null && game.assists !== undefined 
+                        ? parseInt(game.assists) 
+                        : 'N/A';
+                    const rebounds = game.rebounds !== null && game.rebounds !== undefined 
+                        ? parseInt(game.rebounds) 
+                        : 'N/A';
+                    
+                    return `
+                        <div class="game-log-item">
+                            <div class="game-log-date">${gameDate}</div>
+                            <div class="game-log-stats">
+                                <div class="game-log-stat">
+                                    <span class="stat-label">MIN</span>
+                                    <span class="stat-value">${minutes}</span>
+                                </div>
+                                <div class="game-log-stat">
+                                    <span class="stat-label">PTS</span>
+                                    <span class="stat-value">${points}</span>
+                                </div>
+                                <div class="game-log-stat">
+                                    <span class="stat-label">AST</span>
+                                    <span class="stat-value">${assists}</span>
+                                </div>
+                                <div class="game-log-stat">
+                                    <span class="stat-label">REB</span>
+                                    <span class="stat-value">${rebounds}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                modalBody.innerHTML = `
+                    <div class="game-logs-list">
+                        ${logsHTML}
+                    </div>
+                `;
+            }
         } else {
             modalBody.innerHTML = '<div class="no-game-logs">No hay game logs disponibles para este jugador.</div>';
         }

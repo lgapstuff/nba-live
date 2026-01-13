@@ -503,6 +503,67 @@ header h1 {
     color: #667eea;
 }
 
+/* OVER/UNDER display in modal */
+.game-log-over-under {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.game-log-points-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 1em;
+}
+
+.game-log-points-display .points-value {
+    font-weight: 700;
+    font-size: 1.2em;
+    color: #333;
+}
+
+.game-log-points-display .points-vs {
+    color: #999;
+    font-size: 0.9em;
+}
+
+.game-log-points-display .points-line {
+    font-weight: 600;
+    color: #667eea;
+    font-size: 1.1em;
+}
+
+.game-log-result {
+    text-align: center;
+    padding: 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.95em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.game-log-result.over {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.game-log-result.under {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.game-log-result.push {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
 .game-logs-loading {
     padding: 20px;
     text-align: center;

@@ -541,7 +541,7 @@ class LineupService:
                                 over_under_history = self.player_stats_service.calculate_over_under_history(
                                     player_id=player_id_to_use,
                                     points_line=player['points_line'],
-                                    num_games=10,
+                                    num_games=25,
                                     player_name=player_name
                                 )
                                 player['over_under_history'] = over_under_history
@@ -572,7 +572,7 @@ class LineupService:
                                     over_under_history = self.player_stats_service.calculate_over_under_history(
                                         player_id=player_id_to_use,
                                         points_line=player['points_line'],
-                                        num_games=10,
+                                        num_games=25,
                                         player_name=player_name
                                     )
                                     player['over_under_history'] = over_under_history
