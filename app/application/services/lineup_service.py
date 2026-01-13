@@ -333,6 +333,13 @@ class LineupService:
                                        home_team: str, away_team: str,
                                        team_lineups: Dict[str, Dict[str, Dict[str, Any]]]) -> int:
         """
+        Save lineups for a game using NBA API rosters.
+        Players from FantasyNerds lineups are matched by name with NBA API rosters and marked as STARTER.
+        Other players from NBA API rosters are marked as BENCH.
+        
+        This ensures we always use official NBA player IDs.
+        """
+        """
         Save lineups for a game using depth chart.
         Players from FantasyNerds lineups are marked as STARTER.
         Players in depth chart but not in FantasyNerds lineups are marked as BENCH.
@@ -359,12 +366,19 @@ class LineupService:
         
         # Process both teams
         for team_abbr in [home_team, away_team]:
-            # Get all players from depth chart for this team
+            # Get all players from depth chart (NBA API rosters) for this team
             depth_chart_players = self.depth_chart_service.get_players_by_team(team_abbr)
             
             if not depth_chart_players:
-                logger.warning(f"No depth chart found for team {team_abbr}, skipping")
+                logger.warning(f"No roster found for team {team_abbr}, skipping")
                 continue
+            
+            # Create a map of player names (lowercase) to NBA player data for quick lookup
+            nba_players_map = {}  # player_name_lower -> {player_id, player_name, ...}
+            for nba_player in depth_chart_players:
+                player_name = nba_player.get('player_name', '')
+                if player_name:
+                    nba_players_map[player_name.lower()] = nba_player
             
             # Get lineup from FantasyNerds for this team
             fantasy_lineup = team_lineups.get(team_abbr, {})
@@ -372,43 +386,57 @@ class LineupService:
             # First, delete existing lineups for this team and game to start fresh
             self.lineup_repository.delete_lineups_for_team_game(game_id, lineup_date, team_abbr)
             
-            # Get player IDs from FantasyNerds lineup (these are the starters)
-            starter_player_ids = set()
-            starter_players_by_position = {}  # position -> player_data
+            # Match FantasyNerds lineup players with NBA API roster by name
+            starter_nba_ids = set()  # Track NBA IDs of starters
+            starter_players_by_position = {}  # position -> player_data with NBA ID
             
             for position, player_data in fantasy_lineup.items():
                 if position in ['PG', 'SG', 'SF', 'PF', 'C']:  # Only actual positions
-                    player_id = int(player_data.get('playerId', 0))
-                    if player_id > 0:
-                        starter_player_ids.add(player_id)
+                    fantasy_player_name = player_data.get('name', '')
+                    if not fantasy_player_name:
+                        continue
+                    
+                    # Find matching player in NBA roster by name
+                    matched_nba_player = nba_players_map.get(fantasy_player_name.lower())
+                    
+                    if matched_nba_player:
+                        # Found match - use NBA official ID
+                        nba_player_id = matched_nba_player.get('player_id')
+                        starter_nba_ids.add(nba_player_id)
                         starter_players_by_position[position] = {
-                            'player_id': player_id,
-                            'player_name': player_data.get('name', ''),
-                            'confirmed': player_data.get('confirmed', '0') == '1' or player_data.get('confirmed', False)
+                            'player_id': nba_player_id,  # Official NBA ID
+                            'player_name': matched_nba_player.get('player_name', fantasy_player_name),
+                            'confirmed': player_data.get('confirmed', '0') == '1' or player_data.get('confirmed', False),
+                            'player_photo_url': matched_nba_player.get('player_photo_url')
                         }
+                        logger.info(f"[LINEUP] Matched STARTER {fantasy_player_name} with NBA ID {nba_player_id} for {team_abbr}")
+                    else:
+                        # No match found - log warning but still save with FantasyNerds data
+                        logger.warning(f"[LINEUP] Could not find NBA roster match for STARTER {fantasy_player_name} from {team_abbr}")
+                        fantasy_player_id = int(player_data.get('playerId', 0))
+                        if fantasy_player_id > 0:
+                            starter_players_by_position[position] = {
+                                'player_id': fantasy_player_id,  # Fallback to FantasyNerds ID
+                                'player_name': fantasy_player_name,
+                                'confirmed': player_data.get('confirmed', '0') == '1' or player_data.get('confirmed', False)
+                            }
             
-            # First, save players from FantasyNerds lineup as STARTERS in their positions
+            # Save players from FantasyNerds lineup as STARTERS in their positions (using NBA IDs when available)
             for position in ['PG', 'SG', 'SF', 'PF', 'C']:
                 if position in starter_players_by_position:
                     starter_data = starter_players_by_position[position]
-                    player_id = starter_data['player_id']
+                    player_id = starter_data['player_id']  # NBA ID if matched, otherwise FantasyNerds ID
                     player_name = starter_data['player_name']
                     confirmed = starter_data['confirmed']
+                    player_photo_url = starter_data.get('player_photo_url')
                     
-                    # Get player photo from depth chart if available
-                    player_photo_url = None
-                    for depth_player in depth_chart_players:
-                        if depth_player.get('player_id') == player_id:
-                            player_photo_url = depth_player.get('player_photo_url')
-                            break
-                    
-                    # Save player from FantasyNerds lineup as STARTER
+                    # Save player as STARTER
                     try:
                         self.lineup_repository.save_lineup_for_game(
                             game_id=game_id,
                             lineup_date=lineup_date,
                             team_abbr=team_abbr,
-                            position=position,  # Position from FantasyNerds lineup
+                            position=position,
                             player_id=player_id,
                             player_name=player_name,
                             confirmed=confirmed,
@@ -420,30 +448,25 @@ class LineupService:
                         logger.error(f"Error saving STARTER player {player_name} for team {team_abbr}: {e}")
                         continue
             
-            # Then, save players from depth chart that are NOT in FantasyNerds lineup as BENCH
-            # Save them with position 'BENCH' to avoid conflicts with starter positions
-            for depth_player in depth_chart_players:
-                player_id = depth_player.get('player_id', 0)
+            # Then, save players from NBA roster that are NOT in FantasyNerds lineup as BENCH
+            for nba_player in depth_chart_players:
+                nba_player_id = nba_player.get('player_id', 0)
                 
                 # Skip if player is already saved as STARTER
-                if player_id in starter_player_ids:
+                if nba_player_id in starter_nba_ids:
                     continue
                 
-                player_name = depth_player.get('player_name', '')
+                player_name = nba_player.get('player_name', '')
                 
-                # Save player from depth chart as BENCH with position 'BENCH'
-                # Use a unique key by including player_id in the position or use a different approach
-                # For now, we'll use 'BENCH' as position and handle uniqueness differently
+                # Save player from NBA roster as BENCH
                 try:
-                    # Use player_id as part of a unique identifier for BENCH players
-                    # We'll save them with position 'BENCH' and use a workaround for uniqueness
                     self.lineup_repository.save_bench_player_for_game(
                         game_id=game_id,
                         lineup_date=lineup_date,
                         team_abbr=team_abbr,
-                        player_id=player_id,
+                        player_id=nba_player_id,  # Official NBA ID
                         player_name=player_name,
-                        player_photo_url=depth_player.get('player_photo_url')
+                        player_photo_url=nba_player.get('player_photo_url')
                     )
                     saved_count += 1
                 except Exception as e:

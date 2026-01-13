@@ -294,7 +294,17 @@ class OddsService:
                 date_match = True
                 if game_date_obj and commence_time:
                     try:
+                        from datetime import timezone
                         event_date = datetime.fromisoformat(commence_time.replace('Z', '+00:00'))
+                        
+                        # Ensure both datetimes are timezone-aware before subtracting
+                        if event_date.tzinfo is None:
+                            event_date = event_date.replace(tzinfo=timezone.utc)
+                        
+                        if game_date_obj.tzinfo is None:
+                            # If game_date_obj is naive, assume it's in UTC
+                            game_date_obj = game_date_obj.replace(tzinfo=timezone.utc)
+                        
                         # Allow events within 48 hours (more lenient)
                         time_diff = abs((event_date - game_date_obj).total_seconds())
                         date_match = time_diff < 172800  # 48 hours in seconds

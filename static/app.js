@@ -4,7 +4,7 @@ const API_BASE_URL = 'http://localhost:8000';
 // DOM Elements
 const scheduleUploadSection = document.getElementById('schedule-upload-section');
 const scheduleFileInput = document.getElementById('schedule-file-input');
-const depthChartFileInput = document.getElementById('depth-chart-file-input');
+// Depth chart file input removed - now loaded automatically from NBA API
 const loadSchedulesBtn = document.getElementById('load-schedules-btn');
 const lineupsActionsSection = document.getElementById('lineups-actions-section');
 const loadLineupsBtn = document.getElementById('load-lineups-btn');
@@ -29,14 +29,10 @@ function getTodayInLATimezone() {
 
 // Event Listeners
 loadSchedulesBtn.addEventListener('click', () => {
-    // First select schedule file, then depth chart file
+    // Open file picker for schedule file
     scheduleFileInput.click();
 });
-scheduleFileInput.addEventListener('change', () => {
-    // After schedule file is selected, select depth chart file
-    depthChartFileInput.click();
-});
-depthChartFileInput.addEventListener('change', handleScheduleFileSelect);
+scheduleFileInput.addEventListener('change', handleScheduleFileSelect);
 loadLineupsBtn.addEventListener('click', loadLineups);
 
 // Check if schedule exists for today and load accordingly
@@ -78,23 +74,17 @@ async function checkScheduleAndLoad() {
     }
 }
 
-// Handle schedule file selection (both files must be selected)
+// Handle schedule file selection (rosters loaded automatically from NBA API)
 async function handleScheduleFileSelect(event) {
     const scheduleFile = scheduleFileInput.files[0];
-    const depthChartFile = depthChartFileInput.files[0];
     
-    if (!scheduleFile || !depthChartFile) {
-        // Wait for both files to be selected
-        if (!scheduleFile) {
-            showError('Por favor selecciona el archivo de schedule primero');
-        } else if (!depthChartFile) {
-            showError('Por favor selecciona el archivo de depth chart');
-        }
+    if (!scheduleFile) {
+        showError('Por favor selecciona el archivo de schedule');
         return;
     }
     
     // Show loading
-    loadingText.textContent = 'Cargando schedules y depth charts...';
+    loadingText.textContent = 'Cargando schedule y rosters desde NBA API...';
     showLoading();
     hideError();
     gamesContainer.innerHTML = '';
@@ -102,7 +92,6 @@ async function handleScheduleFileSelect(event) {
     try {
         const formData = new FormData();
         formData.append('schedule_file', scheduleFile);
-        formData.append('depth_chart_file', depthChartFile);
         
         const response = await fetch(`${API_BASE_URL}/nba/schedule/import`, {
             method: 'POST',
@@ -123,23 +112,23 @@ async function handleScheduleFileSelect(event) {
         const data = await response.json();
         
         if (data.success) {
-            // Schedule and depth charts loaded successfully, now load games for today
+            // Schedule and rosters loaded successfully, now load games for today
+            showSuccess(`Schedule cargado: ${data.schedule?.saved_games || 0} juegos. Rosters: ${data.rosters?.teams_processed || 0} equipos.`);
             await loadGames();
             // Hide the upload section and show lineups actions
             scheduleUploadSection.classList.add('hidden');
             lineupsActionsSection.classList.remove('hidden');
         } else {
-            throw new Error(data.message || 'Error al cargar schedules y depth charts');
+            throw new Error(data.message || 'Error al cargar schedule y rosters');
         }
         
     } catch (error) {
-        console.error('Error loading schedules and depth charts:', error);
-        showError(`Error al cargar schedules y depth charts: ${error.message || error}`);
+        console.error('Error loading schedule and rosters:', error);
+        showError(`Error al cargar schedule y rosters: ${error.message || error}`);
     } finally {
         hideLoading();
-        // Reset file inputs
+        // Reset file input
         scheduleFileInput.value = '';
-        depthChartFileInput.value = '';
     }
 }
 
@@ -188,6 +177,73 @@ async function loadLineups() {
         hideLoading();
     }
 }
+
+// Load game logs for an event (must be in global scope)
+window.loadGameLogsForGame = async function(gameId, buttonElement) {
+    console.log('loadGameLogsForGame called with gameId:', gameId);
+    
+    if (!gameId) {
+        console.error('No gameId provided');
+        showError('Error: No se proporcionó un ID de juego');
+        return;
+    }
+    
+    if (!buttonElement) {
+        console.error('No buttonElement provided');
+        showError('Error: No se proporcionó el elemento del botón');
+        return;
+    }
+    
+    // Show loading state on button
+    const btnText = buttonElement.querySelector('.btn-text') || buttonElement;
+    const originalText = btnText.textContent;
+    btnText.textContent = 'Cargando...';
+    buttonElement.disabled = true;
+    
+    try {
+        console.log(`Loading game logs for game ${gameId} from ${API_BASE_URL}/nba/games/${gameId}/game-logs`);
+        
+        const response = await fetch(`${API_BASE_URL}/nba/games/${gameId}/game-logs`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error response:', errorText);
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (e) {
+                errorData = { message: errorText || `HTTP ${response.status}` };
+            }
+            throw new Error(errorData.message || `Error ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Game logs data received:', data);
+        
+        if (data.success) {
+            console.log(`Game logs loaded successfully: ${data.players_processed} players, ${data.games_loaded} games`);
+            showSuccess(`Game logs cargados: ${data.players_processed} jugadores, ${data.games_loaded} juegos`);
+        } else {
+            throw new Error(data.message || 'Error al cargar game logs');
+        }
+        
+    } catch (error) {
+        console.error('Error loading game logs for game:', error);
+        showError(`Error al cargar game logs: ${error.message || error}`);
+    } finally {
+        // Restore button state
+        btnText.textContent = originalText;
+        buttonElement.disabled = false;
+    }
+};
 
 // Load odds for a specific game (must be in global scope for onclick)
 window.loadOddsForGame = async function(gameId, buttonElement) {
@@ -402,8 +458,9 @@ function displayGames(games, hasLineups = false) {
         gamesContainer.appendChild(gameCard);
     });
     
-    // Add event listeners to all "Cargar Odds" buttons
+    // Add event listeners to all action buttons
     if (hasLineups) {
+        // Odds buttons
         const loadOddsButtons = gamesContainer.querySelectorAll('.load-odds-btn');
         loadOddsButtons.forEach(button => {
             button.addEventListener('click', function() {
@@ -449,6 +506,9 @@ function createGameCard(game, hasLineups = false) {
         
         ${hasLineups ? `
             <div class="actions-section">
+                <button class="action-btn load-game-logs-btn" data-game-id="${game.game_id}">
+                    Cargar Game Logs
+                </button>
                 <button class="action-btn load-odds-btn" data-game-id="${game.game_id}">
                     Cargar Odds
                 </button>
@@ -525,8 +585,9 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
             }
         }
         
+        const playerId = player.player_id || '';
         return `
-            <div class="position-card" data-player-id="${player.player_id || ''}" data-player-name="${player.player_name}">
+            <div class="position-card" data-player-id="${playerId}" data-player-name="${player.player_name}">
                 <div class="position-label">${position}</div>
                 <img src="${player.player_photo_url || getPlaceholderPlayer()}" 
                      alt="${player.player_name}" 
@@ -535,8 +596,9 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
                 <div class="player-name">${player.player_name}</div>
                 ${pointsLine}
                 ${overUnderHistory}
-                <div class="player-id">ID: ${player.player_id || 'N/A'}</div>
+                <div class="player-id">ID: ${playerId || 'N/A'}</div>
                 ${statusBadge}
+                ${playerId ? `<button class="show-game-logs-btn" data-player-id="${playerId}" onclick="toggleGameLogs(${playerId}, this)">Ver Últimos 25 Juegos</button>` : ''}
             </div>
         `;
     }).join('');
@@ -576,8 +638,9 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
             }
         }
         
+        const playerId = player.player_id || '';
         return `
-            <div class="position-card bench-card" data-player-id="${player.player_id || ''}" data-player-name="${player.player_name}">
+            <div class="position-card bench-card" data-player-id="${playerId}" data-player-name="${player.player_name}">
                 <div class="position-label">BENCH</div>
                 <img src="${player.player_photo_url || getPlaceholderPlayer()}" 
                      alt="${player.player_name}" 
@@ -586,8 +649,9 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
                 <div class="player-name">${player.player_name}</div>
                 ${pointsLine}
                 ${overUnderHistory}
-                <div class="player-id">ID: ${player.player_id || 'N/A'}</div>
+                <div class="player-id">ID: ${playerId || 'N/A'}</div>
                 <span class="status-badge bench">BENCH</span>
+                ${playerId ? `<button class="show-game-logs-btn" data-player-id="${playerId}" onclick="toggleGameLogs(${playerId}, this)">Ver Últimos 25 Juegos</button>` : ''}
             </div>
         `;
     }).join('');
@@ -674,6 +738,28 @@ function hideError() {
     errorDiv.classList.add('hidden');
 }
 
+function showSuccess(message) {
+    // Create or get success message div
+    let successDiv = document.getElementById('success-message');
+    if (!successDiv) {
+        successDiv = document.createElement('div');
+        successDiv.id = 'success-message';
+        successDiv.className = 'success-message';
+        successDiv.style.cssText = 'background-color: #d4edda; color: #155724; padding: 12px; margin: 10px 0; border-radius: 4px; border: 1px solid #c3e6cb;';
+        const header = document.querySelector('header');
+        if (header) {
+            header.appendChild(successDiv);
+        }
+    }
+    successDiv.textContent = message;
+    successDiv.classList.remove('hidden');
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        successDiv.classList.add('hidden');
+    }, 5000);
+}
+
 function showEmptyState(message) {
     gamesContainer.innerHTML = `
         <div class="empty-state">
@@ -681,6 +767,163 @@ function showEmptyState(message) {
             <p>${message}</p>
         </div>
     `;
+}
+
+// Open game logs modal
+window.toggleGameLogs = async function(playerId, buttonElement) {
+    // Get player name from the card
+    const playerCard = buttonElement.closest('.position-card');
+    const playerName = playerCard ? playerCard.querySelector('.player-name')?.textContent : `Player ${playerId}`;
+    
+    // Create or get modal
+    let modal = document.getElementById('game-logs-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'game-logs-modal';
+        modal.className = 'game-logs-modal';
+        modal.innerHTML = `
+            <div class="game-logs-modal-overlay"></div>
+            <div class="game-logs-modal-content">
+                <div class="game-logs-modal-header">
+                    <h3 class="game-logs-modal-title">Últimos 25 Juegos</h3>
+                    <button class="game-logs-modal-close" onclick="closeGameLogsModal()">&times;</button>
+                </div>
+                <div class="game-logs-modal-body">
+                    <div class="game-logs-loading">Cargando...</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // Close on overlay click
+        modal.querySelector('.game-logs-modal-overlay').addEventListener('click', closeGameLogsModal);
+        
+        // Close on ESC key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && modal.classList.contains('active')) {
+                closeGameLogsModal();
+            }
+        });
+    }
+    
+    // Update player name in modal
+    const titleElement = modal.querySelector('.game-logs-modal-title');
+    if (titleElement) {
+        titleElement.textContent = `${playerName} - Últimos 25 Juegos`;
+    }
+    
+    // Show modal
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    
+    // Load game logs
+    const modalBody = modal.querySelector('.game-logs-modal-body');
+    modalBody.innerHTML = '<div class="game-logs-loading">Cargando...</div>';
+    
+    try {
+        const url = new URL(`${API_BASE_URL}/nba/players/${playerId}/game-logs`);
+        if (playerName) {
+            url.searchParams.append('player_name', playerName);
+        }
+        
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.game_logs && data.game_logs.length > 0) {
+            // Sort by date descending (most recent first)
+            const sortedGames = [...data.game_logs].sort((a, b) => {
+                const dateA = new Date(a.game_date);
+                const dateB = new Date(b.game_date);
+                return dateB - dateA;
+            });
+            
+            const logsHTML = sortedGames.map(game => {
+                const gameDate = formatGameLogDate(game.game_date);
+                const minutes = game.minutes_played !== null && game.minutes_played !== undefined 
+                    ? parseFloat(game.minutes_played).toFixed(1) 
+                    : 'N/A';
+                const points = game.points !== null && game.points !== undefined 
+                    ? parseFloat(game.points).toFixed(1) 
+                    : 'N/A';
+                const assists = game.assists !== null && game.assists !== undefined 
+                    ? parseInt(game.assists) 
+                    : 'N/A';
+                const rebounds = game.rebounds !== null && game.rebounds !== undefined 
+                    ? parseInt(game.rebounds) 
+                    : 'N/A';
+                
+                return `
+                    <div class="game-log-item">
+                        <div class="game-log-date">${gameDate}</div>
+                        <div class="game-log-stats">
+                            <div class="game-log-stat">
+                                <span class="stat-label">MIN</span>
+                                <span class="stat-value">${minutes}</span>
+                            </div>
+                            <div class="game-log-stat">
+                                <span class="stat-label">PTS</span>
+                                <span class="stat-value">${points}</span>
+                            </div>
+                            <div class="game-log-stat">
+                                <span class="stat-label">AST</span>
+                                <span class="stat-value">${assists}</span>
+                            </div>
+                            <div class="game-log-stat">
+                                <span class="stat-label">REB</span>
+                                <span class="stat-value">${rebounds}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            modalBody.innerHTML = `
+                <div class="game-logs-list">
+                    ${logsHTML}
+                </div>
+            `;
+        } else {
+            modalBody.innerHTML = '<div class="no-game-logs">No hay game logs disponibles para este jugador.</div>';
+        }
+    } catch (error) {
+        console.error(`Error loading game logs for player ${playerId}:`, error);
+        modalBody.innerHTML = '<div class="no-game-logs">Error al cargar game logs</div>';
+    }
+};
+
+// Close game logs modal
+window.closeGameLogsModal = function() {
+    const modal = document.getElementById('game-logs-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+};
+
+// Format date for game log display
+function formatGameLogDate(dateString) {
+    if (!dateString) return 'N/A';
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('es-ES', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    } catch (e) {
+        return dateString;
+    }
 }
 
 // Check schedule and load games on page load

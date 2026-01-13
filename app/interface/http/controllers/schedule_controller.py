@@ -27,9 +27,8 @@ class ScheduleController:
     
     def import_schedule(self) -> Tuple[Dict[str, Any], int]:
         """
-        Import schedule and depth chart from JSON files.
-        Accepts two files: 'schedule_file' and 'depth_chart_file'.
-        Both files are required.
+        Import schedule from JSON file and automatically load rosters from NBA API.
+        Only requires 'schedule_file'. Depth charts are now loaded from NBA API automatically.
         
         Returns:
             JSON response and status code
@@ -40,7 +39,6 @@ class ScheduleController:
             
             # Check if schedule file was uploaded
             schedule_file = request.files.get('schedule_file')
-            depth_chart_file = request.files.get('depth_chart_file')
             
             if not schedule_file or schedule_file.filename == '':
                 return jsonify({
@@ -48,15 +46,8 @@ class ScheduleController:
                     "message": "schedule_file is required"
                 }), 400
             
-            if not depth_chart_file or depth_chart_file.filename == '':
-                return jsonify({
-                    "success": False,
-                    "message": "depth_chart_file is required"
-                }), 400
-            
-            # Save uploaded files temporarily
+            # Save uploaded file temporarily
             schedule_tmp_path = None
-            depth_chart_tmp_path = None
             
             try:
                 # Save schedule file
@@ -64,41 +55,35 @@ class ScheduleController:
                     schedule_file.save(tmp.name)
                     schedule_tmp_path = tmp.name
                 
-                # Save depth chart file
-                with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.json') as tmp:
-                    depth_chart_file.save(tmp.name)
-                    depth_chart_tmp_path = tmp.name
-                
                 # Import schedule
                 schedule_result = self.schedule_service.import_schedule_from_json(schedule_tmp_path)
                 
-                # Import depth chart if service is available
-                depth_chart_result = None
-                if self.depth_chart_service:
-                    depth_chart_result = self.depth_chart_service.import_depth_charts_from_json(depth_chart_tmp_path)
+                # Automatically load rosters from NBA API (optimization)
+                roster_result = None
+                if self.depth_chart_service and schedule_result.get('success', False):
+                    logger.info("Automatically loading rosters from NBA API after schedule import...")
+                    roster_result = self.depth_chart_service.import_rosters_from_nba_api()
                 else:
-                    depth_chart_result = {
+                    roster_result = {
                         "success": False,
-                        "message": "Depth chart service not available"
+                        "message": "Depth chart service not available or schedule import failed"
                     }
                 
                 # Combine results
                 combined_result = {
-                    "success": schedule_result.get('success', False) and depth_chart_result.get('success', False),
+                    "success": schedule_result.get('success', False) and roster_result.get('success', False),
                     "schedule": schedule_result,
-                    "depth_chart": depth_chart_result,
-                    "message": f"Schedule: {schedule_result.get('message', 'Unknown')}. Depth Chart: {depth_chart_result.get('message', 'Unknown')}"
+                    "rosters": roster_result,
+                    "message": f"Schedule: {schedule_result.get('message', 'Unknown')}. Rosters: {roster_result.get('message', 'Unknown')}"
                 }
                 
                 status_code = 200 if combined_result['success'] else 400
                 return jsonify(combined_result), status_code
                 
             finally:
-                # Clean up temporary files
+                # Clean up temporary file
                 if schedule_tmp_path and os.path.exists(schedule_tmp_path):
                     os.unlink(schedule_tmp_path)
-                if depth_chart_tmp_path and os.path.exists(depth_chart_tmp_path):
-                    os.unlink(depth_chart_tmp_path)
                 
         except Exception as e:
             logger.error(f"Error in import_schedule: {e}")

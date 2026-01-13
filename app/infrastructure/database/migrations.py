@@ -150,6 +150,39 @@ def create_tables(config: Config) -> None:
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """)
                 
+                # Create player_game_logs table for storing game logs locally
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS player_game_logs (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        player_id INT NOT NULL,
+                        player_name VARCHAR(100) NOT NULL,
+                        game_date DATE NOT NULL,
+                        matchup VARCHAR(50),
+                        points DECIMAL(5,1),
+                        minutes_played DECIMAL(5,1),
+                        field_goals_made INT,
+                        field_goals_attempted INT,
+                        three_pointers_made INT,
+                        three_pointers_attempted INT,
+                        free_throws_made INT,
+                        free_throws_attempted INT,
+                        rebounds INT,
+                        assists INT,
+                        steals INT,
+                        blocks INT,
+                        turnovers INT,
+                        personal_fouls INT,
+                        plus_minus INT,
+                        game_data JSON,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY unique_game_log (player_id, game_date, matchup),
+                        INDEX idx_player_id (player_id),
+                        INDEX idx_game_date (game_date),
+                        INDEX idx_player_date (player_id, game_date)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """)
+                
                 conn.commit()
                 logger.info("Database tables created successfully")
                 

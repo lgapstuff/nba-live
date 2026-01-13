@@ -245,14 +245,41 @@ class NBAClient(NBAPort):
             
             logger.info(f"Fetching roster for team {team_abbr} (ID: {team_id}), season {season}")
             
-            # Get team roster
-            roster = self.commonteamroster.CommonTeamRoster(
-                team_id=team_id,
-                season=season
-            )
+            # Get team roster with retry logic and timeout handling
+            import time
+            max_retries = 3
+            retry_delay = 1  # seconds
             
-            # Get data frames
-            data_frames = roster.get_data_frames()
+            for attempt in range(max_retries):
+                try:
+                    roster = self.commonteamroster.CommonTeamRoster(
+                        team_id=team_id,
+                        season=season
+                    )
+                    
+                    # Get data frames with timeout
+                    data_frames = roster.get_data_frames()
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    # Check if it's a timeout error
+                    error_msg = str(e).lower()
+                    is_timeout = 'timeout' in error_msg or 'timed out' in error_msg
+                    
+                    if attempt < max_retries - 1:  # Not the last attempt
+                        if is_timeout:
+                            logger.warning(f"Timeout fetching roster for {team_abbr} (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s...")
+                        else:
+                            logger.warning(f"Error fetching roster for {team_abbr} (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        # Last attempt failed
+                        if is_timeout:
+                            logger.error(f"Timeout fetching roster for {team_abbr} (ID: {team_id}), season {season} after {max_retries} attempts. The NBA API may be slow or rate-limited.")
+                        else:
+                            logger.error(f"Error fetching roster for {team_abbr} (ID: {team_id}), season {season} after {max_retries} attempts: {e}")
+                        return []
             
             if not data_frames or len(data_frames) == 0:
                 logger.warning(f"No roster found for team {team_abbr} in season {season}")

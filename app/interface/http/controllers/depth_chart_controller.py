@@ -24,13 +24,20 @@ class DepthChartController:
     
     def import_depth_charts(self) -> Tuple[Dict[str, Any], int]:
         """
-        Import depth charts from FantasyNerds API.
+        Import rosters from NBA API (preferred) or FantasyNerds API (fallback).
         
         Returns:
             JSON response and status code
         """
         try:
-            result = self.depth_chart_service.import_depth_charts()
+            # Try NBA API first (preferred method)
+            result = self.depth_chart_service.import_rosters_from_nba_api()
+            
+            # If NBA API failed, fallback to FantasyNerds (for backward compatibility)
+            if not result.get('success'):
+                logger.warning("NBA API import failed, trying FantasyNerds as fallback")
+                result = self.depth_chart_service.import_depth_charts()
+            
             status_code = 200 if result.get('success', False) else 400
             return jsonify(result), status_code
             

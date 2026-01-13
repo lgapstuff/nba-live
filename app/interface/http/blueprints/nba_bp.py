@@ -15,10 +15,13 @@ from app.application.services.lineup_service import LineupService
 from app.application.services.odds_service import OddsService
 from app.application.services.depth_chart_service import DepthChartService
 from app.application.services.player_stats_service import PlayerStatsService
+from app.application.services.game_log_service import GameLogService
+from app.infrastructure.repositories.game_log_repository import GameLogRepository
 from app.interface.http.controllers.schedule_controller import ScheduleController
 from app.interface.http.controllers.lineup_controller import LineupController
 from app.interface.http.controllers.odds_controller import OddsController
 from app.interface.http.controllers.depth_chart_controller import DepthChartController
+from app.interface.http.controllers.game_log_controller import GameLogController
 
 nba_bp = Blueprint("nba", __name__, url_prefix="/nba")
 
@@ -33,22 +36,33 @@ odds_api_client = OddsAPIClient(config.THE_ODDS_API_KEY or "")
 # Initialize NBA API client (optional - may fail if nba_api is not installed)
 nba_client = None
 player_stats_service = None
+game_log_service = None
 try:
     nba_client = NBAClient()
-    player_stats_service = PlayerStatsService(nba_client)
+    # Initialize game log repository and service
+    game_log_repository = GameLogRepository(db_connection)
+    game_log_service = GameLogService(nba_client, game_log_repository)
+    # Initialize player stats service with game log service for optimization
+    player_stats_service = PlayerStatsService(nba_client, game_log_service)
 except Exception as e:
     import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"NBA API client not available: {e}. OVER/UNDER history will not be calculated.")
 
 schedule_service = ScheduleService(game_repository)
-depth_chart_service = DepthChartService(fantasynerds_client, lineup_repository)
+# Initialize depth chart service with NBA API (preferred) and FantasyNerds (fallback)
+depth_chart_service = DepthChartService(
+    lineup_repository=lineup_repository,
+    nba_api_port=nba_client,  # Use NBA API for rosters
+    fantasynerds_port=fantasynerds_client  # Keep for backward compatibility
+)
 lineup_service = LineupService(fantasynerds_client, lineup_repository, game_repository, depth_chart_service, player_stats_service)
 odds_service = OddsService(odds_api_client, lineup_repository, game_repository, depth_chart_service, player_stats_service)
 schedule_controller = ScheduleController(schedule_service, depth_chart_service)
 lineup_controller = LineupController(lineup_service, odds_service)
 odds_controller = OddsController(odds_service)
 depth_chart_controller = DepthChartController(depth_chart_service)
+game_log_controller = GameLogController(game_log_service) if game_log_service else None
 
 
 @nba_bp.route("/games", methods=["GET"])
@@ -179,7 +193,8 @@ def import_odds():
 @nba_bp.route("/depth-charts/import", methods=["POST"])
 def import_depth_charts():
     """
-    Import depth charts from FantasyNerds API for all teams.
+    Import team rosters from NBA API for all teams.
+    This replaces the old FantasyNerds depth charts with official NBA rosters.
     
     Returns:
         JSON with import results
@@ -196,4 +211,50 @@ def check_depth_charts():
         JSON with has_depth_charts boolean
     """
     return depth_chart_controller.check_depth_charts()
+
+
+@nba_bp.route("/games/<game_id>/game-logs", methods=["POST"])
+def load_game_logs(game_id: str):
+    """
+    Load game logs for all players in an event.
+    Pre-loads the last 25 games for each player from both teams.
+    
+    Path parameters:
+        game_id: Game identifier
+    
+    Returns:
+        JSON with loading results
+    """
+    if not game_log_controller:
+        return {
+            "success": False,
+            "message": "Game log service not available. NBA API client not initialized."
+        }, 503
+    
+    return game_log_controller.load_game_logs_for_event(game_id)
+
+
+@nba_bp.route("/players/<int:player_id>/game-logs", methods=["GET"])
+def get_player_game_logs(player_id: int):
+    """
+    Get game logs for a specific player (lazy loading).
+    If not in database, loads from NBA API and saves them.
+    
+    Path parameters:
+        player_id: NBA player ID
+    
+    Query parameters:
+        player_name: Player name (optional, for logging)
+    
+    Returns:
+        JSON with game logs (last 25 games)
+    """
+    if not game_log_controller:
+        return {
+            "success": False,
+            "message": "Game log service not available. NBA API client not initialized."
+        }, 503
+    
+    player_name = request.args.get('player_name')
+    return game_log_controller.get_player_game_logs(player_id, player_name)
 

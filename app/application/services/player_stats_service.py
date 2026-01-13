@@ -1,5 +1,6 @@
 """
 Service for calculating player statistics and OVER/UNDER history.
+Uses local game logs when available, falls back to NBA API.
 """
 import logging
 from typing import Dict, Any, Optional, List
@@ -12,16 +13,19 @@ logger = logging.getLogger(__name__)
 class PlayerStatsService:
     """
     Service for calculating player statistics based on game logs.
+    Prefers local database over real-time API calls.
     """
     
-    def __init__(self, nba_port: NBAPort):
+    def __init__(self, nba_port: NBAPort, game_log_service=None):
         """
         Initialize the service.
         
         Args:
             nba_port: Port for NBA API integration
+            game_log_service: GameLogService for local game logs (optional)
         """
         self.nba_api = nba_port
+        self.game_log_service = game_log_service
     
     def calculate_over_under_history(self, player_id: int, points_line: float, 
                                     num_games: int = 10, player_name: Optional[str] = None) -> Dict[str, Any]:
@@ -63,6 +67,23 @@ class PlayerStatsService:
             target_player_id = nba_player_id if nba_player_id else player_id
             logger.info(f"[OVER/UNDER] Using player_id {target_player_id} to fetch games")
             
+            # Try to use local game logs first (optimization)
+            if self.game_log_service:
+                try:
+                    logger.info(f"[OVER/UNDER] Attempting to use local game logs for player {target_player_id}")
+                    result = self.game_log_service.calculate_over_under_from_local(
+                        target_player_id, points_line, num_games
+                    )
+                    if result.get('total_games', 0) > 0:
+                        logger.info(f"[OVER/UNDER] Using local game logs: {result.get('over_count')} OVER, {result.get('under_count')} UNDER")
+                        return result
+                    else:
+                        logger.info(f"[OVER/UNDER] No local game logs found, falling back to NBA API")
+                except Exception as e:
+                    logger.warning(f"[OVER/UNDER] Error using local game logs: {e}, falling back to NBA API")
+            
+            # Fallback to NBA API
+            logger.info(f"[OVER/UNDER] Fetching games from NBA API for player {target_player_id}")
             games = self.nba_api.get_player_last_n_games(target_player_id, n=num_games)
             
             # If still no games found and we haven't tried the other ID, try it
