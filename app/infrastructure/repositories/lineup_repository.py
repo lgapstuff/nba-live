@@ -3,6 +3,7 @@ Lineup repository for MySQL operations.
 """
 from typing import List, Dict, Any, Optional
 import logging
+import json
 
 from app.infrastructure.database.connection import DatabaseConnection
 from app.domain.value_objects.player_photos import get_player_photo_url
@@ -74,9 +75,11 @@ class LineupRepository:
     def update_points_line_for_player(self, game_id: str, lineup_date: str, 
                                       team_abbr: str, player_id: int, 
                                       points_line: Optional[float],
+                                      assists_line: Optional[float] = None,
+                                      rebounds_line: Optional[float] = None,
                                       over_under_history: Optional[Dict[str, Any]] = None) -> None:
         """
-        Update points_line and optionally over_under_history for a player in the lineup.
+        Update points_line, assists_line, rebounds_line and optionally over_under_history for a player in the lineup.
         
         Args:
             game_id: Game identifier
@@ -84,6 +87,8 @@ class LineupRepository:
             team_abbr: Team abbreviation
             player_id: Player ID
             points_line: Points line from odds
+            assists_line: Assists line from odds (optional)
+            rebounds_line: Rebounds line from odds (optional)
             over_under_history: OVER/UNDER history dictionary (optional)
         """
         import json
@@ -94,23 +99,29 @@ class LineupRepository:
                     cursor.execute("""
                         UPDATE game_lineups
                         SET points_line = %s,
+                            assists_line = %s,
+                            rebounds_line = %s,
                             over_under_history = %s,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE game_id = %s
                           AND lineup_date = %s
                           AND team_abbr = %s
                           AND player_id = %s
-                    """, (points_line, over_under_json, game_id, lineup_date, team_abbr, player_id))
+                    """, (points_line, assists_line, rebounds_line, over_under_json, 
+                          game_id, lineup_date, team_abbr, player_id))
                 else:
                     cursor.execute("""
                         UPDATE game_lineups
                         SET points_line = %s,
+                            assists_line = %s,
+                            rebounds_line = %s,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE game_id = %s
                           AND lineup_date = %s
                           AND team_abbr = %s
                           AND player_id = %s
-                    """, (points_line, game_id, lineup_date, team_abbr, player_id))
+                    """, (points_line, assists_line, rebounds_line, 
+                          game_id, lineup_date, team_abbr, player_id))
                 conn.commit()
     
     def save_lineups_for_game(self, game_id: str, lineup_date: str, 
@@ -245,7 +256,7 @@ class LineupRepository:
                     SELECT 
                         gl.game_id, gl.team_abbr, gl.position,
                         gl.player_id, gl.player_name, gl.player_photo_url, gl.confirmed, gl.player_status,
-                        gl.lineup_date, gl.points_line,
+                        gl.lineup_date, gl.points_line, gl.assists_line, gl.rebounds_line, gl.over_under_history,
                         g.home_team, g.away_team, g.game_date, g.game_time,
                         g.home_team_name, g.away_team_name,
                         g.home_team_logo_url, g.away_team_logo_url
@@ -288,13 +299,29 @@ class LineupRepository:
                     if not photo_url:
                         photo_url = get_player_photo_url(row['player_id'])
                     
+                    # Parse over_under_history JSON if present
+                    over_under_history = None
+                    if row.get('over_under_history'):
+                        try:
+                            if isinstance(row['over_under_history'], str):
+                                over_under_history = json.loads(row['over_under_history'])
+                            else:
+                                # Already a dict (MySQL JSON type returns dict)
+                                over_under_history = row['over_under_history']
+                        except (json.JSONDecodeError, TypeError):
+                            logger.warning(f"Failed to parse over_under_history for player {row['player_name']}")
+                            over_under_history = None
+                    
                     player_data = {
                         'player_id': row['player_id'],
                         'player_name': row['player_name'],
                         'player_photo_url': photo_url,  # May be None if photo unavailable
                         'confirmed': bool(row['confirmed']),
                         'player_status': player_status,
-                        'points_line': float(row['points_line']) if row.get('points_line') is not None else None
+                        'points_line': float(row['points_line']) if row.get('points_line') is not None else None,
+                        'assists_line': float(row['assists_line']) if row.get('assists_line') is not None else None,
+                        'rebounds_line': float(row['rebounds_line']) if row.get('rebounds_line') is not None else None,
+                        'over_under_history': over_under_history
                     }
                     
                     # Handle BENCH players (position format: 'BENCH-{player_id}')
@@ -325,7 +352,7 @@ class LineupRepository:
                     SELECT 
                         gl.game_id, gl.team_abbr, gl.position,
                         gl.player_id, gl.player_name, gl.player_photo_url, gl.confirmed, gl.player_status,
-                        gl.lineup_date, gl.points_line,
+                        gl.lineup_date, gl.points_line, gl.assists_line, gl.rebounds_line, gl.over_under_history,
                         g.home_team, g.away_team,
                         g.home_team_name, g.away_team_name,
                         g.home_team_logo_url, g.away_team_logo_url,
@@ -370,13 +397,29 @@ class LineupRepository:
                     position = row['position']
                     player_status = row.get('player_status', 'BENCH')
                     
+                    # Parse over_under_history JSON if present
+                    over_under_history = None
+                    if row.get('over_under_history'):
+                        try:
+                            if isinstance(row['over_under_history'], str):
+                                over_under_history = json.loads(row['over_under_history'])
+                            else:
+                                # Already a dict (MySQL JSON type returns dict)
+                                over_under_history = row['over_under_history']
+                        except (json.JSONDecodeError, TypeError):
+                            logger.warning(f"Failed to parse over_under_history for player {row['player_name']}")
+                            over_under_history = None
+                    
                     player_data = {
                         'player_id': row['player_id'],
                         'player_name': row['player_name'],
                         'player_photo_url': photo_url,  # May be None if photo unavailable
                         'confirmed': bool(row['confirmed']),
                         'player_status': player_status,
-                        'points_line': float(row['points_line']) if row.get('points_line') is not None else None
+                        'points_line': float(row['points_line']) if row.get('points_line') is not None else None,
+                        'assists_line': float(row['assists_line']) if row.get('assists_line') is not None else None,
+                        'rebounds_line': float(row['rebounds_line']) if row.get('rebounds_line') is not None else None,
+                        'over_under_history': over_under_history
                     }
                     
                     # Handle BENCH players (position format: 'BENCH-{player_id}')
@@ -423,10 +466,12 @@ class LineupRepository:
                 conn.commit()
     
     def save_bench_player_for_game(self, game_id: str, lineup_date: str, team_abbr: str,
-                                   player_id: int, player_name: str, 
-                                   player_photo_url: Optional[str] = None,
-                                   points_line: Optional[float] = None,
-                                   over_under_history: Optional[Dict[str, Any]] = None) -> None:
+                                      player_id: int, player_name: str, 
+                                      player_photo_url: Optional[str] = None,
+                                      points_line: Optional[float] = None,
+                                      assists_line: Optional[float] = None,
+                                      rebounds_line: Optional[float] = None,
+                                      over_under_history: Optional[Dict[str, Any]] = None) -> None:
         """
         Save a BENCH player for a game.
         Uses a composite position 'BENCH-{player_id}' to ensure uniqueness.
@@ -439,6 +484,8 @@ class LineupRepository:
             player_name: Player name
             player_photo_url: URL to player photo
             points_line: Points line from odds (optional)
+            assists_line: Assists line from odds (optional)
+            rebounds_line: Rebounds line from odds (optional)
             over_under_history: OVER/UNDER history dictionary (optional)
         """
         import json
@@ -455,9 +502,10 @@ class LineupRepository:
                 cursor.execute("""
                     INSERT INTO game_lineups (
                         game_id, lineup_date, team_abbr, position,
-                        player_id, player_name, player_photo_url, confirmed, player_status, points_line, over_under_history
+                        player_id, player_name, player_photo_url, confirmed, player_status, 
+                        points_line, assists_line, rebounds_line, over_under_history
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON DUPLICATE KEY UPDATE
                         player_id = VALUES(player_id),
@@ -466,10 +514,13 @@ class LineupRepository:
                         confirmed = 0,
                         player_status = 'BENCH',
                         points_line = VALUES(points_line),
+                        assists_line = VALUES(assists_line),
+                        rebounds_line = VALUES(rebounds_line),
                         over_under_history = VALUES(over_under_history),
                         updated_at = CURRENT_TIMESTAMP
                 """, (game_id, lineup_date, team_abbr, position, 
-                      player_id, player_name, player_photo_url, 0, 'BENCH', points_line, over_under_json))
+                      player_id, player_name, player_photo_url, 0, 'BENCH', 
+                      points_line, assists_line, rebounds_line, over_under_json))
                 conn.commit()
     
     def save_depth_chart(self, team_abbr: str, season: int, depth_chart: Dict[str, List[Dict[str, Any]]]) -> int:

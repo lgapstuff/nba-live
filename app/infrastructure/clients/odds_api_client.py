@@ -63,17 +63,20 @@ class OddsAPIClient(OddsAPIPort):
             return []
     
     def get_player_points_odds(self, event_id: str, regions: str = "us", 
-                              markets: str = "player_points", 
+                              markets: str = "player_points,player_assists,player_rebounds", 
                               odds_format: str = "american") -> Dict[str, Any]:
         """
-        Get player points odds for a specific event.
-        Uses the event-specific endpoint which supports player_points market.
+        Get player props odds for a specific event (points, assists, rebounds).
+        Uses the event-specific endpoint which supports player prop markets.
         Filters to only FanDuel bookmaker.
+        
+        Note: Method name kept as 'get_player_points_odds' for interface compatibility,
+        but it can fetch multiple markets (points, assists, rebounds).
         
         Args:
             event_id: Event identifier from The Odds API
             regions: Regions to get odds from (default: "us")
-            markets: Market type (default: "player_points")
+            markets: Market types (default: "player_points,player_assists,player_rebounds")
             odds_format: Odds format (default: "american")
             
         Returns:
@@ -90,7 +93,7 @@ class OddsAPIClient(OddsAPIPort):
                 'oddsFormat': odds_format
             }
             
-            logger.info(f"Fetching player_points odds from The Odds API for event {event_id}: {url}")
+            logger.info(f"Fetching player props odds from The Odds API for event {event_id}: {url}")
             logger.debug(f"Request params: {params}")
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
@@ -123,27 +126,27 @@ class OddsAPIClient(OddsAPIPort):
                 bookmaker_key = bookmaker.get('key', '').lower()
                 logger.debug(f"Checking bookmaker: {bookmaker_key}")
                 if bookmaker_key == 'fanduel':
-                    # Check if FanDuel has player_points market
+                    # Get all player prop markets (points, assists, rebounds)
                     markets_list = bookmaker.get('markets', [])
                     market_keys = [m.get('key', '') for m in markets_list]
                     logger.info(f"FanDuel markets available: {market_keys}")
                     
-                    # Filter to only player_points market
-                    player_points_markets = [m for m in markets_list if m.get('key') == 'player_points']
-                    if player_points_markets:
-                        # Create a bookmaker dict with only player_points market
-                        fanduel_with_player_points = {
+                    # Filter to player prop markets
+                    player_prop_markets = [m for m in markets_list if m.get('key') in ['player_points', 'player_assists', 'player_rebounds']]
+                    if player_prop_markets:
+                        # Create a bookmaker dict with player prop markets
+                        fanduel_with_props = {
                             **bookmaker,
-                            'markets': player_points_markets
+                            'markets': player_prop_markets
                         }
-                        filtered_bookmakers.append(fanduel_with_player_points)
-                        logger.info(f"Found FanDuel player_points odds for event {event_id} with {len(player_points_markets[0].get('outcomes', []))} outcomes")
+                        filtered_bookmakers.append(fanduel_with_props)
+                        logger.info(f"Found FanDuel player props for event {event_id}: {[m.get('key') for m in player_prop_markets]}")
                     else:
-                        logger.warning(f"FanDuel found but no player_points market available. Available markets: {market_keys}")
+                        logger.warning(f"FanDuel found but no player prop markets available. Available markets: {market_keys}")
                     break  # Only need one FanDuel entry
             
             if not filtered_bookmakers:
-                logger.warning(f"No FanDuel player_points odds found for event {event_id}. Available bookmakers: {bookmaker_keys}")
+                logger.warning(f"No FanDuel player props found for event {event_id}. Available bookmakers: {bookmaker_keys}")
                 return {}
             
             # Return event data with only FanDuel bookmaker
@@ -157,7 +160,7 @@ class OddsAPIClient(OddsAPIPort):
                 'bookmakers': filtered_bookmakers
             }
             
-            logger.info(f"Successfully retrieved FanDuel player_points odds for event {event_id}")
+            logger.info(f"Successfully retrieved FanDuel player props for event {event_id}")
             return result
             
         except requests.exceptions.HTTPError as e:

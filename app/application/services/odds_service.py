@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from app.domain.ports.odds_api_port import OddsAPIPort
 from app.infrastructure.repositories.lineup_repository import LineupRepository
 from app.infrastructure.repositories.game_repository import GameRepository
+from app.infrastructure.repositories.odds_history_repository import OddsHistoryRepository
 from app.application.services.depth_chart_service import DepthChartService
 from app.application.services.player_stats_service import PlayerStatsService
 
@@ -26,7 +27,8 @@ class OddsService:
                  lineup_repository: LineupRepository,
                  game_repository: GameRepository,
                  depth_chart_service: DepthChartService = None,
-                 player_stats_service: PlayerStatsService = None):
+                 player_stats_service: PlayerStatsService = None,
+                 odds_history_repository: OddsHistoryRepository = None):
         """
         Initialize the service.
         
@@ -36,12 +38,14 @@ class OddsService:
             game_repository: Repository for game operations
             depth_chart_service: Service for depth charts (optional, for team matching)
             player_stats_service: Service for player statistics (optional, for OVER/UNDER history)
+            odds_history_repository: Repository for odds history (optional)
         """
         self.odds_api = odds_api_port
         self.lineup_repository = lineup_repository
         self.game_repository = game_repository
         self.depth_chart_service = depth_chart_service
         self.player_stats_service = player_stats_service
+        self.odds_history_repository = odds_history_repository
         self._cached_events = None
         self._events_cache_time = None
     
@@ -194,8 +198,16 @@ class OddsService:
                     "message": f"Could not find matching event in The Odds API for {game.get('away_team_name', 'Away')} @ {game.get('home_team_name', 'Home')} on {game.get('game_date', 'unknown date')}. The game may not be available in The Odds API yet."
                 }
             
-            # Get odds from The Odds API (only FanDuel)
-            odds_data = self.odds_api.get_player_points_odds(event_id)
+            # Get odds from The Odds API (only FanDuel) - try to get points, assists, and rebounds
+            # First try with all markets, fallback to just points if that fails
+            try:
+                odds_data = self.odds_api.get_player_points_odds(
+                    event_id, 
+                    markets="player_points,player_assists,player_rebounds"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to get all player props, trying just points: {e}")
+                odds_data = self.odds_api.get_player_points_odds(event_id, markets="player_points")
             
             # Log the complete odds data received from The Odds API
             if odds_data:
@@ -487,46 +499,128 @@ class OddsService:
                 continue
             
             markets = bookmaker.get('markets', [])
+            market_keys = [m.get('key') for m in markets]
+            logger.info(f"[ODDS] Available markets in FanDuel: {market_keys}")
+            
+            # First pass: collect all outcomes by player and market
+            player_markets_data = {}  # player_name_lower -> {player_points: {...}, player_assists: {...}, player_rebounds: {...}}
+            
             for market in markets:
-                if market.get('key') == 'player_points':
+                market_key = market.get('key')
+                # Process player_points, player_assists, and player_rebounds markets
+                if market_key in ['player_points', 'player_assists', 'player_rebounds']:
                     outcomes = market.get('outcomes', [])
                     
                     for outcome in outcomes:
                         player_name_odds = outcome.get('description', '')
                         player_name_lower = player_name_odds.lower()
                         
-                        # Store best odds for each player (only Over outcomes to avoid duplicates)
-                        if outcome.get('name') == 'Over':
-                            if player_name_lower not in odds_players_map:
-                                odds_players_map[player_name_lower] = {
-                                    'name': player_name_odds,
-                                    'odds': []
-                                }
-                            
-                            odds_players_map[player_name_lower]['odds'].append({
-                                'bookmaker': bookmaker.get('title', ''),
-                                'bookmaker_key': bookmaker.get('key', ''),
-                                'over_under': outcome.get('name', ''),
-                                'points_line': outcome.get('point'),
-                                'odds': outcome.get('price'),
-                                'under_odds': None,  # Will be filled from next outcome
-                                'last_update': market.get('last_update')
-                            })
-                        elif outcome.get('name') == 'Under':
-                            # Find corresponding Over outcome
-                            if player_name_lower in odds_players_map:
-                                # Add under odds to the last Over entry
-                                if odds_players_map[player_name_lower]['odds']:
-                                    odds_players_map[player_name_lower]['odds'][-1]['under_odds'] = outcome.get('price')
+                        # Initialize player entry if not exists
+                        if player_name_lower not in player_markets_data:
+                            player_markets_data[player_name_lower] = {
+                                'name': player_name_odds,
+                                'player_points': {},
+                                'player_assists': {},
+                                'player_rebounds': {}
+                            }
+                        
+                        outcome_name = outcome.get('name', '')
+                        point_value = outcome.get('point')
+                        price_value = outcome.get('price')
+                        
+                        # Store Over and Under outcomes for each market
+                        if outcome_name == 'Over':
+                            player_markets_data[player_name_lower][market_key]['over'] = {
+                                'point': point_value,
+                                'price': price_value
+                            }
+                        elif outcome_name == 'Under':
+                            player_markets_data[player_name_lower][market_key]['under'] = {
+                                'point': point_value,
+                                'price': price_value
+                            }
+            
+            # Second pass: combine all markets into single odds entries per player
+            for player_name_lower, player_data in player_markets_data.items():
+                # Create a single odds entry combining all available markets
+                odds_entry = {
+                    'bookmaker': bookmaker.get('title', ''),
+                    'bookmaker_key': bookmaker.get('key', ''),
+                    'over_under': 'Over',  # Default to Over for points market
+                    'last_update': markets[0].get('last_update') if markets else None
+                }
+                
+                # Add points market data (required)
+                if player_data['player_points'].get('over'):
+                    odds_entry['points_line'] = player_data['player_points']['over']['point']
+                    odds_entry['odds'] = player_data['player_points']['over']['price']
+                    if player_data['player_points'].get('under'):
+                        odds_entry['under_odds'] = player_data['player_points']['under']['price']
+                
+                # Add assists market data (optional)
+                if player_data['player_assists'].get('over'):
+                    odds_entry['assists_line'] = player_data['player_assists']['over']['point']
+                    odds_entry['assists_odds'] = player_data['player_assists']['over']['price']
+                    if player_data['player_assists'].get('under'):
+                        odds_entry['assists_under_odds'] = player_data['player_assists']['under']['price']
+                
+                # Add rebounds market data (optional)
+                if player_data['player_rebounds'].get('over'):
+                    odds_entry['rebounds_line'] = player_data['player_rebounds']['over']['point']
+                    odds_entry['rebounds_odds'] = player_data['player_rebounds']['over']['price']
+                    if player_data['player_rebounds'].get('under'):
+                        odds_entry['rebounds_under_odds'] = player_data['player_rebounds']['under']['price']
+                
+                # Only add to odds_players_map if we have at least points_line (required)
+                if odds_entry.get('points_line') is not None:
+                    if player_name_lower not in odds_players_map:
+                        odds_players_map[player_name_lower] = {
+                            'name': player_data['name'],
+                            'odds': []
+                        }
+                    odds_players_map[player_name_lower]['odds'].append(odds_entry)
+                    logger.debug(f"[ODDS] Combined odds for {player_data['name']}: PTS={odds_entry.get('points_line')}, AST={odds_entry.get('assists_line')}, REB={odds_entry.get('rebounds_line')}")
         
-        # Get players for both teams - try NBA API first, fallback to depth charts
+        # Get players for both teams - try database first (depth charts), fallback to NBA API
         home_team_abbr = game.get('home_team', '')
         away_team_abbr = game.get('away_team', '')
         team_players_list = []  # List for matching players from odds
         
-        # Try to get players from NBA API first (more reliable for IDs)
+        # Try to get players from database first (faster, no API calls)
         nba_players_available = False
-        if hasattr(self, 'player_stats_service') and self.player_stats_service:
+        if self.depth_chart_service:
+            try:
+                logger.info(f"[ODDS] Fetching players from database for teams {home_team_abbr} and {away_team_abbr}")
+                home_nba_players = self.depth_chart_service.get_players_by_team(home_team_abbr)
+                away_nba_players = self.depth_chart_service.get_players_by_team(away_team_abbr)
+                
+                # Add players from database with official IDs
+                for player in home_nba_players:
+                    team_players_list.append({
+                        'player_name': player.get('player_name', ''),
+                        'player_id': player.get('player_id'),  # Official NBA ID
+                        'team': home_team_abbr,
+                        'position': player.get('position', ''),
+                        'source': 'database'
+                    })
+                
+                for player in away_nba_players:
+                    team_players_list.append({
+                        'player_name': player.get('player_name', ''),
+                        'player_id': player.get('player_id'),  # Official NBA ID
+                        'team': away_team_abbr,
+                        'position': player.get('position', ''),
+                        'source': 'database'
+                    })
+                
+                if team_players_list:
+                    nba_players_available = True
+                    logger.info(f"[ODDS] Found {len(team_players_list)} players from database")
+            except Exception as e:
+                logger.warning(f"[ODDS] Could not fetch players from database: {e}, falling back to NBA API")
+        
+        # Fallback to NBA API if database didn't work
+        if not nba_players_available and hasattr(self, 'player_stats_service') and self.player_stats_service:
             nba_api = getattr(self.player_stats_service, 'nba_api', None)
             if nba_api and hasattr(nba_api, 'get_team_players'):
                 try:
@@ -557,9 +651,9 @@ class OddsService:
                         nba_players_available = True
                         logger.info(f"[ODDS] Found {len(team_players_list)} players from NBA API")
                 except Exception as e:
-                    logger.warning(f"[ODDS] Could not fetch players from NBA API: {e}, falling back to depth charts")
+                    logger.warning(f"[ODDS] Could not fetch players from NBA API: {e}")
         
-        # Fallback to depth charts if NBA API didn't work
+        # Final fallback to depth charts if both database and API didn't work
         if not nba_players_available and self.depth_chart_service:
             logger.info(f"[ODDS] Using depth charts for teams {home_team_abbr} and {away_team_abbr}")
             # Get all players from both teams' depth charts
@@ -613,11 +707,16 @@ class OddsService:
                 # Use official NBA ID if found, otherwise fallback to FantasyNerds ID
                 player_id_to_use = official_nba_id if official_nba_id else matched_starter['player_id']
                 
-                # Update points_line in database for this STARTER player
+                # Update points_line, assists_line, rebounds_line in database for this STARTER player
                 if game_date and player_odds_data['odds']:
                     try:
                         first_odds_entry = player_odds_data['odds'][0]
                         points_line = first_odds_entry.get('points_line')
+                        assists_line = first_odds_entry.get('assists_line')
+                        rebounds_line = first_odds_entry.get('rebounds_line')
+                        over_odds = first_odds_entry.get('odds')
+                        under_odds = first_odds_entry.get('under_odds')
+                        bookmaker = first_odds_entry.get('bookmaker')
                         
                         self.lineup_repository.update_points_line_for_player(
                             game_id=game_id,
@@ -625,8 +724,31 @@ class OddsService:
                             team_abbr=matched_starter['team'],
                             player_id=matched_starter['player_id'],  # Keep FantasyNerds ID in DB for reference
                             points_line=points_line,
+                            assists_line=assists_line,
+                            rebounds_line=rebounds_line,
                             over_under_history=over_under_history
                         )
+                        
+                        # Save odds history (only if changed)
+                        if self.odds_history_repository and points_line:
+                            try:
+                                saved = self.odds_history_repository.save_odds_history(
+                                    player_id=matched_starter['player_id'],
+                                    player_name=matched_starter['player_name'],
+                                    game_id=game_id,
+                                    game_date=game_date,
+                                    team_abbr=matched_starter['team'],
+                                    points_line=points_line,
+                                    assists_line=assists_line,
+                                    rebounds_line=rebounds_line,
+                                    over_odds=over_odds,
+                                    under_odds=under_odds,
+                                    bookmaker=bookmaker
+                                )
+                                if saved:
+                                    logger.debug(f"Saved odds history for STARTER player {matched_starter['player_name']}")
+                            except Exception as e:
+                                logger.warning(f"Could not save odds history for STARTER player {matched_starter['player_name']}: {e}")
                     except Exception as e:
                         logger.warning(f"Could not update points_line for STARTER player {matched_starter['player_name']}: {e}")
                 
@@ -666,6 +788,8 @@ class OddsService:
                         'bookmaker_key': odds_entry['bookmaker_key'],
                         'over_under': odds_entry['over_under'],
                         'points_line': odds_entry['points_line'],
+                        'assists_line': odds_entry.get('assists_line'),
+                        'rebounds_line': odds_entry.get('rebounds_line'),
                         'odds': odds_entry['odds'],
                         'under_odds': odds_entry.get('under_odds'),
                         'last_update': odds_entry['last_update']
@@ -725,6 +849,8 @@ class OddsService:
                             'bookmaker_key': odds_entry['bookmaker_key'],
                             'over_under': odds_entry['over_under'],
                             'points_line': odds_entry['points_line'],
+                            'assists_line': odds_entry.get('assists_line'),
+                            'rebounds_line': odds_entry.get('rebounds_line'),
                             'odds': odds_entry['odds'],
                             'under_odds': odds_entry.get('under_odds'),
                             'last_update': odds_entry['last_update']
@@ -736,22 +862,52 @@ class OddsService:
                         
                         matched_players.append(player_data)
                     
-                    # Save player as BENCH in database with points_line from first odds entry
+                    # Save player as BENCH in database with points_line, assists_line, rebounds_line from first odds entry
                     if game_date and player_odds_data['odds']:
                         try:
                             first_odds_entry = player_odds_data['odds'][0]
                             points_line = first_odds_entry.get('points_line')
+                            assists_line = first_odds_entry.get('assists_line')
+                            rebounds_line = first_odds_entry.get('rebounds_line')
+                            over_odds = first_odds_entry.get('odds')
+                            under_odds = first_odds_entry.get('under_odds')
+                            bookmaker = first_odds_entry.get('bookmaker')
                             
-                            self.lineup_repository.save_bench_player_for_game(
-                                game_id=game_id,
-                                lineup_date=game_date,
-                                team_abbr=team_abbr,
-                                player_id=player_id,
-                                player_name=player_name,
-                                player_photo_url=team_player.get('player_photo_url'),
-                                points_line=points_line,
-                                over_under_history=over_under_history
-                            )
+                            # Only save if we have at least points_line
+                            if points_line is not None:
+                                self.lineup_repository.save_bench_player_for_game(
+                                    game_id=game_id,
+                                    lineup_date=game_date,
+                                    team_abbr=team_abbr,
+                                    player_id=player_id,
+                                    player_name=player_name,
+                                    player_photo_url=team_player.get('player_photo_url'),
+                                    points_line=points_line,
+                                    assists_line=assists_line,
+                                    rebounds_line=rebounds_line,
+                                    over_under_history=over_under_history
+                                )
+                            
+                            # Save odds history (only if changed)
+                            if self.odds_history_repository and points_line:
+                                try:
+                                    saved = self.odds_history_repository.save_odds_history(
+                                        player_id=player_id,
+                                        player_name=player_name,
+                                        game_id=game_id,
+                                        game_date=game_date,
+                                        team_abbr=team_abbr,
+                                        points_line=points_line,
+                                        assists_line=assists_line,
+                                        rebounds_line=rebounds_line,
+                                        over_odds=over_odds,
+                                        under_odds=under_odds,
+                                        bookmaker=bookmaker
+                                    )
+                                    if saved:
+                                        logger.debug(f"Saved odds history for BENCH player {player_name}")
+                                except Exception as e:
+                                    logger.warning(f"Could not save odds history for BENCH player {player_name}: {e}")
                         except Exception as e:
                             logger.warning(f"Could not save BENCH player {player_name} for team {team_abbr}: {e}")
                 else:

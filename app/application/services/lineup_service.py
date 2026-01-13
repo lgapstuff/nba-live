@@ -2,6 +2,7 @@
 Lineup service for managing NBA lineups and associating them with games.
 """
 import logging
+import unicodedata
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
@@ -366,22 +367,39 @@ class LineupService:
         
         # Process both teams
         for team_abbr in [home_team, away_team]:
+            # Helper function to normalize player names (remove accents)
+            def normalize_player_name(name: str) -> str:
+                """Normalize player name by removing accents and converting to lowercase."""
+                if not name:
+                    return ""
+                normalized = unicodedata.normalize('NFD', name)
+                normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+                return normalized.lower().strip()
+            
             # Get all players from depth chart (NBA API rosters) for this team
+            logger.debug(f"[LINEUP] Looking up roster for team {team_abbr} from database...")
             depth_chart_players = self.depth_chart_service.get_players_by_team(team_abbr)
             
-            if not depth_chart_players:
-                logger.warning(f"No roster found for team {team_abbr}, skipping")
-                continue
-            
-            # Create a map of player names (lowercase) to NBA player data for quick lookup
-            nba_players_map = {}  # player_name_lower -> {player_id, player_name, ...}
-            for nba_player in depth_chart_players:
-                player_name = nba_player.get('player_name', '')
-                if player_name:
-                    nba_players_map[player_name.lower()] = nba_player
+            # Create a map of player names (normalized) to NBA player data for quick lookup
+            nba_players_map = {}  # player_name_normalized -> {player_id, player_name, ...}
+            if depth_chart_players:
+                logger.info(f"[LINEUP] Found {len(depth_chart_players)} players in database for team {team_abbr}")
+                for nba_player in depth_chart_players:
+                    player_name = nba_player.get('player_name', '')
+                    if player_name:
+                        nba_players_map[normalize_player_name(player_name)] = nba_player
+            else:
+                logger.warning(f"[LINEUP] No roster found in database for team {team_abbr}, will use FantasyNerds IDs as fallback")
+                logger.debug(f"[LINEUP] This means rosters need to be imported. Check if depth_chart_service has rosters: {self.depth_chart_service.has_depth_charts() if hasattr(self.depth_chart_service, 'has_depth_charts') else 'N/A'}")
             
             # Get lineup from FantasyNerds for this team
             fantasy_lineup = team_lineups.get(team_abbr, {})
+            
+            if not fantasy_lineup:
+                logger.warning(f"[LINEUP] No FantasyNerds lineup found for team {team_abbr}, skipping")
+                continue
+            
+            logger.info(f"[LINEUP] Processing FantasyNerds lineup for {team_abbr}: {list(fantasy_lineup.keys())}")
             
             # First, delete existing lineups for this team and game to start fresh
             self.lineup_repository.delete_lineups_for_team_game(game_id, lineup_date, team_abbr)
@@ -396,8 +414,8 @@ class LineupService:
                     if not fantasy_player_name:
                         continue
                     
-                    # Find matching player in NBA roster by name
-                    matched_nba_player = nba_players_map.get(fantasy_player_name.lower())
+                    # Find matching player in NBA roster by name (normalized)
+                    matched_nba_player = nba_players_map.get(normalize_player_name(fantasy_player_name))
                     
                     if matched_nba_player:
                         # Found match - use NBA official ID
@@ -422,6 +440,7 @@ class LineupService:
                             }
             
             # Save players from FantasyNerds lineup as STARTERS in their positions (using NBA IDs when available)
+            logger.info(f"[LINEUP] Saving {len(starter_players_by_position)} STARTER players for {team_abbr}")
             for position in ['PG', 'SG', 'SF', 'PF', 'C']:
                 if position in starter_players_by_position:
                     starter_data = starter_players_by_position[position]
@@ -430,6 +449,7 @@ class LineupService:
                     confirmed = starter_data['confirmed']
                     player_photo_url = starter_data.get('player_photo_url')
                     
+                    logger.debug(f"[LINEUP] Saving STARTER {player_name} (ID: {player_id}) at {position} for {team_abbr}")
                     # Save player as STARTER
                     try:
                         self.lineup_repository.save_lineup_for_game(
@@ -444,34 +464,41 @@ class LineupService:
                             player_photo_url=player_photo_url
                         )
                         saved_count += 1
+                        logger.debug(f"[LINEUP] Successfully saved STARTER {player_name} for {team_abbr}")
                     except Exception as e:
-                        logger.error(f"Error saving STARTER player {player_name} for team {team_abbr}: {e}")
+                        logger.error(f"[LINEUP] Error saving STARTER {player_name} for {team_abbr} at {position}: {e}", exc_info=True)
                         continue
+                else:
+                    logger.warning(f"[LINEUP] No player found for position {position} in FantasyNerds lineup for {team_abbr}")
             
             # Then, save players from NBA roster that are NOT in FantasyNerds lineup as BENCH
-            for nba_player in depth_chart_players:
-                nba_player_id = nba_player.get('player_id', 0)
-                
-                # Skip if player is already saved as STARTER
-                if nba_player_id in starter_nba_ids:
-                    continue
-                
-                player_name = nba_player.get('player_name', '')
-                
-                # Save player from NBA roster as BENCH
-                try:
-                    self.lineup_repository.save_bench_player_for_game(
-                        game_id=game_id,
-                        lineup_date=lineup_date,
-                        team_abbr=team_abbr,
-                        player_id=nba_player_id,  # Official NBA ID
-                        player_name=player_name,
-                        player_photo_url=nba_player.get('player_photo_url')
-                    )
-                    saved_count += 1
-                except Exception as e:
-                    logger.error(f"Error saving BENCH player {player_name} for team {team_abbr}: {e}")
-                    continue
+            # Only do this if we have rosters in the database
+            if depth_chart_players:
+                for nba_player in depth_chart_players:
+                    nba_player_id = nba_player.get('player_id', 0)
+                    
+                    # Skip if player is already saved as STARTER
+                    if nba_player_id in starter_nba_ids:
+                        continue
+                    
+                    player_name = nba_player.get('player_name', '')
+                    
+                    # Save player from NBA roster as BENCH
+                    try:
+                        self.lineup_repository.save_bench_player_for_game(
+                            game_id=game_id,
+                            lineup_date=lineup_date,
+                            team_abbr=team_abbr,
+                            player_id=nba_player_id,  # Official NBA ID
+                            player_name=player_name,
+                            player_photo_url=nba_player.get('player_photo_url')
+                        )
+                        saved_count += 1
+                    except Exception as e:
+                        logger.error(f"Error saving BENCH player {player_name} for team {team_abbr}: {e}")
+                        continue
+            else:
+                logger.info(f"[LINEUP] Skipping BENCH players for {team_abbr} - no roster in database")
         
         return saved_count
     
@@ -501,21 +528,45 @@ class LineupService:
             home_team = game.get('home_team', '')
             away_team = game.get('away_team', '')
             
-            # Try to get NBA roster for both teams to map names to official IDs
-            team_players_map = {}  # player_name_lower -> nba_id
-            if nba_api and hasattr(nba_api, 'get_team_players'):
+            # Helper function to normalize player names (remove accents)
+            def normalize_player_name(name: str) -> str:
+                """Normalize player name by removing accents and converting to lowercase."""
+                if not name:
+                    return ""
+                normalized = unicodedata.normalize('NFD', name)
+                normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+                return normalized.lower().strip()
+            
+            # Try to get NBA roster for both teams from database to map names to official IDs
+            team_players_map = {}  # player_name_normalized -> nba_id
+            if self.depth_chart_service:
                 try:
                     for team_abbr in [home_team, away_team]:
                         if team_abbr:
-                            nba_players = nba_api.get_team_players(team_abbr)
+                            # Get players from database (depth charts) instead of API
+                            nba_players = self.depth_chart_service.get_players_by_team(team_abbr)
                             for nba_player in nba_players:
-                                player_name = nba_player.get('full_name', '')
-                                nba_id = nba_player.get('id')
+                                player_name = nba_player.get('player_name', '')
+                                nba_id = nba_player.get('player_id')
                                 if player_name and nba_id:
-                                    team_players_map[player_name.lower()] = nba_id
-                    logger.info(f"[ENRICH] Loaded {len(team_players_map)} NBA player IDs from team rosters")
+                                    team_players_map[normalize_player_name(player_name)] = nba_id
+                    logger.info(f"[ENRICH] Loaded {len(team_players_map)} NBA player IDs from database rosters")
                 except Exception as e:
-                    logger.warning(f"[ENRICH] Could not load NBA team rosters: {e}")
+                    logger.warning(f"[ENRICH] Could not load NBA team rosters from database: {e}")
+                    # Fallback to API if database fails
+                    if nba_api and hasattr(nba_api, 'get_team_players'):
+                        try:
+                            for team_abbr in [home_team, away_team]:
+                                if team_abbr:
+                                    nba_players = nba_api.get_team_players(team_abbr)
+                                    for nba_player in nba_players:
+                                        player_name = nba_player.get('full_name', '')
+                                        nba_id = nba_player.get('id')
+                                        if player_name and nba_id:
+                                            team_players_map[normalize_player_name(player_name)] = nba_id
+                            logger.info(f"[ENRICH] Loaded {len(team_players_map)} NBA player IDs from API (fallback)")
+                        except Exception as api_error:
+                            logger.warning(f"[ENRICH] Could not load NBA team rosters from API either: {api_error}")
             
             for team_abbr, team_lineup in game['lineups'].items():
                 # Process starters (positions PG, SG, SF, PF, C)
@@ -526,10 +577,10 @@ class LineupService:
                             player_name = player.get('player_name', 'Unknown')
                             player_id = player.get('player_id')  # FantasyNerds ID
                             
-                            # Try to find official NBA ID
+                            # Try to find official NBA ID (using normalized name)
                             official_nba_id = None
                             if player_name:
-                                official_nba_id = team_players_map.get(player_name.lower())
+                                official_nba_id = team_players_map.get(normalize_player_name(player_name))
                                 if official_nba_id:
                                     logger.info(f"[ENRICH] Found official NBA ID {official_nba_id} for {player_name} (FantasyNerds ID: {player_id})")
                             
@@ -544,8 +595,12 @@ class LineupService:
                                     num_games=25,
                                     player_name=player_name
                                 )
-                                player['over_under_history'] = over_under_history
-                                logger.info(f"[ENRICH] Successfully calculated OVER/UNDER for {player_name}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                                # Only assign over_under_history if we have valid game logs (total_games > 0)
+                                if over_under_history.get('total_games', 0) > 0:
+                                    player['over_under_history'] = over_under_history
+                                    logger.info(f"[ENRICH] Successfully calculated OVER/UNDER for {player_name}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                                else:
+                                    logger.debug(f"[ENRICH] No game logs available for {player_name}, skipping OVER/UNDER history assignment")
                             except Exception as e:
                                 logger.warning(f"Could not calculate OVER/UNDER history for player {player_name}: {e}")
                 
@@ -558,10 +613,10 @@ class LineupService:
                                 player_name = player.get('player_name', 'Unknown')
                                 player_id = player.get('player_id')
                                 
-                                # Try to find official NBA ID
+                                # Try to find official NBA ID (using normalized name)
                                 official_nba_id = None
                                 if player_name:
-                                    official_nba_id = team_players_map.get(player_name.lower())
+                                    official_nba_id = team_players_map.get(normalize_player_name(player_name))
                                     if official_nba_id:
                                         logger.info(f"[ENRICH] Found official NBA ID {official_nba_id} for BENCH player {player_name} (FantasyNerds ID: {player_id})")
                                 
@@ -575,7 +630,12 @@ class LineupService:
                                         num_games=25,
                                         player_name=player_name
                                     )
-                                    player['over_under_history'] = over_under_history
+                                    # Only assign over_under_history if we have valid game logs (total_games > 0)
+                                    if over_under_history.get('total_games', 0) > 0:
+                                        player['over_under_history'] = over_under_history
+                                        logger.debug(f"[ENRICH] Successfully calculated OVER/UNDER for BENCH {player_name}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                                    else:
+                                        logger.debug(f"[ENRICH] No game logs available for BENCH {player_name}, skipping OVER/UNDER history assignment")
                                 except Exception as e:
                                     logger.warning(f"Could not calculate OVER/UNDER history for player {player_name}: {e}")
         

@@ -11,15 +11,12 @@ def get_player_photo_url(player_id: int, size: str = "medium") -> Optional[str]:
     """
     Get player photo URL. 
     
-    WARNING: FantasyNerds player_id may not work directly with their photo CDN.
-    You may need to:
-    1. Check if FantasyNerds API returns photo URL directly
-    2. Map FantasyNerds player_id to NBA.com player_id
-    3. Use player name to search for photos
-    4. Use a different photo API
+    Tries multiple sources:
+    1. FantasyNerds CDN (for FantasyNerds player IDs)
+    2. NBA.com CDN (for NBA player IDs, typically 6-7 digits)
     
     Args:
-        player_id: Player ID from FantasyNerds API
+        player_id: Player ID (could be FantasyNerds or NBA ID)
         size: Photo size - "small", "medium", or "large" (default: "medium")
         
     Returns:
@@ -28,12 +25,20 @@ def get_player_photo_url(player_id: int, size: str = "medium") -> Optional[str]:
     if not player_id:
         return None
     
-    # Try FantasyNerds CDN (may not work for all players)
+    # NBA player IDs are typically 6-7 digits (e.g., 2544, 201939)
+    # FantasyNerds IDs are typically smaller (1-4 digits)
+    # Try NBA.com first if ID looks like NBA ID (>= 1000)
+    if player_id >= 1000:
+        # Try NBA.com CDN format
+        # Format: https://cdn.nba.com/headshots/nba/latest/260x190/{player_id}.png
+        nba_url = f"https://cdn.nba.com/headshots/nba/latest/260x190/{player_id}.png"
+        # Note: We return this but the frontend will handle fallback if it fails
+        return nba_url
+    
+    # Try FantasyNerds CDN (for FantasyNerds player IDs)
     # Format: https://www.fantasynerds.com/images/nba/players_{size}/{player_id}.png
     fantasynerds_url = f"https://www.fantasynerds.com/images/nba/players_{size}/{player_id}.png"
     
-    # Note: This may return placeholder images for some players
-    # Consider implementing a mapping service or using NBA.com player IDs
     return fantasynerds_url
 
 

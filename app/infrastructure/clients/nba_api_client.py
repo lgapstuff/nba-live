@@ -2,6 +2,7 @@
 NBA API client using nba_api library.
 """
 import logging
+import unicodedata
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
@@ -119,13 +120,33 @@ class NBAClient(NBAPort):
                 logger.warning(f"Error fetching game log for player {player_id}: {e}")
             return []
     
+    def _normalize_name(self, name: str) -> str:
+        """
+        Normalize player name by removing accents and converting to lowercase.
+        
+        Args:
+            name: Player name (e.g., "Nikola Vučević")
+            
+        Returns:
+            Normalized name (e.g., "nikola vucevic")
+        """
+        if not name:
+            return ""
+        # Remove accents and diacritics
+        normalized = unicodedata.normalize('NFD', name)
+        # Remove combining characters (accents)
+        normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+        # Convert to lowercase and strip
+        return normalized.lower().strip()
+    
     def find_nba_player_id_by_name(self, player_name: str) -> Optional[int]:
         """
         Find NBA official player ID by player name.
         Uses fuzzy matching to find the closest match.
+        Handles accents and special characters in names.
         
         Args:
-            player_name: Player name (e.g., "Keyonte George")
+            player_name: Player name (e.g., "Keyonte George" or "Nikola Vučević")
             
         Returns:
             NBA player ID or None if not found
@@ -138,30 +159,33 @@ class NBAClient(NBAPort):
             # Get all players from NBA API
             all_players = self.players.get_players()
             
-            player_name_lower = player_name.lower().strip()
+            # Normalize search name (remove accents, lowercase)
+            player_name_normalized = self._normalize_name(player_name)
             
-            # Try exact match first
+            # Try exact match first (normalized)
             for player in all_players:
-                full_name = player.get('full_name', '').lower().strip()
-                if full_name == player_name_lower:
+                full_name = player.get('full_name', '')
+                full_name_normalized = self._normalize_name(full_name)
+                if full_name_normalized == player_name_normalized:
                     nba_id = player.get('id')
                     if nba_id:
                         self._player_id_cache[player_name] = nba_id
-                        logger.info(f"Found NBA player ID {nba_id} for {player_name}")
+                        logger.info(f"Found NBA player ID {nba_id} for {player_name} (matched: {full_name})")
                         return nba_id
             
-            # Try partial match (first name or last name)
-            name_parts = player_name_lower.split()
+            # Try partial match (first name or last name) with normalized names
+            name_parts = player_name_normalized.split()
             for player in all_players:
-                full_name = player.get('full_name', '').lower().strip()
-                full_name_parts = full_name.split()
+                full_name = player.get('full_name', '')
+                full_name_normalized = self._normalize_name(full_name)
+                full_name_parts = full_name_normalized.split()
                 
                 # Check if all parts of the search name are in the full name
-                if len(name_parts) > 0 and all(part in full_name for part in name_parts):
+                if len(name_parts) > 0 and all(part in full_name_normalized for part in name_parts):
                     nba_id = player.get('id')
                     if nba_id:
                         self._player_id_cache[player_name] = nba_id
-                        logger.info(f"Found NBA player ID {nba_id} for {player_name} (fuzzy match: {player.get('full_name')})")
+                        logger.info(f"Found NBA player ID {nba_id} for {player_name} (fuzzy match: {full_name})")
                         return nba_id
             
             logger.warning(f"Could not find NBA player ID for {player_name}")
@@ -221,19 +245,25 @@ class NBAClient(NBAPort):
             team_name = get_team_name(team_abbr)
             
             # Find team ID from NBA API
+            logger.debug(f"[NBA API] Looking up team ID for {team_abbr} (team_name: {team_name})")
             nba_teams = self.teams.get_teams()
             team_id = None
+            matched_team = None
             
             for team in nba_teams:
                 # Match by full name or abbreviation
                 if (team.get('full_name', '').lower() == team_name.lower() or 
                     team.get('abbreviation', '').upper() == team_abbr.upper()):
                     team_id = team.get('id')
+                    matched_team = team
                     break
             
             if not team_id:
-                logger.warning(f"Could not find NBA team ID for {team_abbr} ({team_name})")
+                logger.warning(f"[NBA API] Could not find NBA team ID for {team_abbr} ({team_name})")
+                logger.debug(f"[NBA API] Available teams (first 5): {[{'abbr': t.get('abbreviation'), 'name': t.get('full_name'), 'id': t.get('id')} for t in nba_teams[:5]]}")
                 return []
+            
+            logger.info(f"[NBA API] Found team: {matched_team.get('full_name')} (ID: {team_id}, Abbr: {matched_team.get('abbreviation')})")
             
             # If season is not provided, use current season
             if not season:
@@ -243,7 +273,8 @@ class NBAClient(NBAPort):
                 else:
                     season = f"{current_year}-{str(current_year + 1)[2:]}"
             
-            logger.info(f"Fetching roster for team {team_abbr} (ID: {team_id}), season {season}")
+            logger.info(f"[NBA API] REQUEST: Fetching roster for team {team_abbr} (ID: {team_id}), season {season}")
+            logger.debug(f"[NBA API] REQUEST PARAMS: team_id={team_id}, season={season}")
             
             # Get team roster with retry logic and timeout handling
             import time
@@ -252,13 +283,26 @@ class NBAClient(NBAPort):
             
             for attempt in range(max_retries):
                 try:
+                    logger.debug(f"[NBA API] Attempt {attempt + 1}/{max_retries}: Calling CommonTeamRoster(team_id={team_id}, season={season})")
                     roster = self.commonteamroster.CommonTeamRoster(
                         team_id=team_id,
                         season=season
                     )
                     
+                    # Try to get the URL that was called (if available in the SDK)
+                    try:
+                        # The nba_api library stores the URL in the response object
+                        if hasattr(roster, 'url'):
+                            logger.debug(f"[NBA API] REQUEST URL: {roster.url}")
+                        elif hasattr(roster, 'response'):
+                            logger.debug(f"[NBA API] Response object available, status: {getattr(roster.response, 'status_code', 'N/A')}")
+                    except Exception as url_error:
+                        logger.debug(f"[NBA API] Could not extract URL from response: {url_error}")
+                    
                     # Get data frames with timeout
+                    logger.debug(f"[NBA API] Getting data frames from response...")
                     data_frames = roster.get_data_frames()
+                    logger.debug(f"[NBA API] RESPONSE: Received {len(data_frames) if data_frames else 0} data frames")
                     break  # Success, exit retry loop
                     
                 except Exception as e:
@@ -282,32 +326,47 @@ class NBAClient(NBAPort):
                         return []
             
             if not data_frames or len(data_frames) == 0:
-                logger.warning(f"No roster found for team {team_abbr} in season {season}")
+                logger.warning(f"[NBA API] RESPONSE: No data frames returned for team {team_abbr} in season {season}")
+                logger.debug(f"[NBA API] RESPONSE: data_frames = {data_frames}")
                 return []
             
             # First data frame contains the roster
             df = data_frames[0]
+            logger.debug(f"[NBA API] RESPONSE: Data frame shape: {df.shape if hasattr(df, 'shape') else 'N/A'}")
+            logger.debug(f"[NBA API] RESPONSE: Data frame columns: {list(df.columns) if hasattr(df, 'columns') else 'N/A'}")
             
             if df.empty:
-                logger.warning(f"Empty roster for team {team_abbr} in season {season}")
+                logger.warning(f"[NBA API] RESPONSE: Empty data frame for team {team_abbr} in season {season}")
+                logger.debug(f"[NBA API] RESPONSE: DataFrame info: {df.info() if hasattr(df, 'info') else 'N/A'}")
                 return []
             
             # Convert to list of dictionaries
             players_list = df.to_dict('records')
+            logger.debug(f"[NBA API] RESPONSE: Converted to {len(players_list)} player records")
+            if players_list:
+                logger.debug(f"[NBA API] RESPONSE: Sample player record (first): {players_list[0]}")
             
             # Format the response
             formatted_players = []
             for player in players_list:
+                player_id = player.get('PLAYER_ID')
+                player_name = player.get('PLAYER', '')
+                if not player_id or not player_name:
+                    logger.warning(f"[NBA API] Skipping invalid player record: {player}")
+                    continue
+                    
                 formatted_players.append({
-                    'id': player.get('PLAYER_ID'),
-                    'full_name': player.get('PLAYER', ''),
+                    'id': player_id,
+                    'full_name': player_name,
                     'team_id': team_id,
                     'team_abbreviation': team_abbr,
                     'position': player.get('POSITION', ''),
                     'jersey_number': player.get('NUM', '')
                 })
             
-            logger.info(f"Retrieved {len(formatted_players)} players for team {team_abbr}")
+            logger.info(f"[NBA API] RESPONSE: Successfully retrieved {len(formatted_players)} players for team {team_abbr}")
+            if formatted_players:
+                logger.debug(f"[NBA API] RESPONSE: Sample formatted player: {formatted_players[0]}")
             
             return formatted_players
             

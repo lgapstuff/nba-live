@@ -7,6 +7,7 @@ from app.config.settings import Config
 from app.infrastructure.database.connection import DatabaseConnection
 from app.infrastructure.repositories.game_repository import GameRepository
 from app.infrastructure.repositories.lineup_repository import LineupRepository
+from app.infrastructure.repositories.odds_history_repository import OddsHistoryRepository
 from app.infrastructure.clients.fantasynerds_client import FantasyNerdsClient
 from app.infrastructure.clients.odds_api_client import OddsAPIClient
 from app.infrastructure.clients.nba_api_client import NBAClient
@@ -30,6 +31,7 @@ config = Config()
 db_connection = DatabaseConnection(config)
 game_repository = GameRepository(db_connection)
 lineup_repository = LineupRepository(db_connection)
+odds_history_repository = OddsHistoryRepository(db_connection)
 fantasynerds_client = FantasyNerdsClient(config.FANTASYNERDS_API_KEY or "")
 odds_api_client = OddsAPIClient(config.THE_ODDS_API_KEY or "")
 
@@ -57,7 +59,7 @@ depth_chart_service = DepthChartService(
     fantasynerds_port=fantasynerds_client  # Keep for backward compatibility
 )
 lineup_service = LineupService(fantasynerds_client, lineup_repository, game_repository, depth_chart_service, player_stats_service)
-odds_service = OddsService(odds_api_client, lineup_repository, game_repository, depth_chart_service, player_stats_service)
+odds_service = OddsService(odds_api_client, lineup_repository, game_repository, depth_chart_service, player_stats_service, odds_history_repository)
 schedule_controller = ScheduleController(schedule_service, depth_chart_service)
 lineup_controller = LineupController(lineup_service, odds_service)
 odds_controller = OddsController(odds_service)
@@ -257,4 +259,44 @@ def get_player_game_logs(player_id: int):
     
     player_name = request.args.get('player_name')
     return game_log_controller.get_player_game_logs(player_id, player_name)
+
+
+@nba_bp.route("/players/<int:player_id>/odds-history", methods=["GET"])
+def get_player_odds_history(player_id: int):
+    """
+    Get odds history for a specific player.
+    
+    Path parameters:
+        player_id: Player ID
+    
+    Query parameters:
+        game_id: Optional game ID to filter by
+        limit: Optional limit on number of records (default: 100)
+    
+    Returns:
+        JSON with odds history
+    """
+    game_id = request.args.get('game_id')
+    limit = request.args.get('limit', type=int)
+    
+    try:
+        history = odds_history_repository.get_player_odds_history(
+            player_id=player_id,
+            game_id=game_id,
+            limit=limit or 100
+        )
+        
+        return {
+            "success": True,
+            "odds_history": history,
+            "count": len(history)
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting odds history for player {player_id}: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"Error getting odds history: {str(e)}"
+        }, 500
 

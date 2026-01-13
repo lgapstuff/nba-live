@@ -130,6 +130,39 @@ def create_tables(config: Config) -> None:
                     # Column already exists, ignore
                     pass
                 
+                # Add assists_line column if it doesn't exist (for storing assists odds)
+                try:
+                    cursor.execute("""
+                        ALTER TABLE game_lineups 
+                        ADD COLUMN assists_line DECIMAL(5,1) NULL
+                    """)
+                    logger.info("Added assists_line column to game_lineups")
+                except Exception:
+                    # Column already exists, ignore
+                    pass
+                
+                # Add rebounds_line column if it doesn't exist (for storing rebounds odds)
+                try:
+                    cursor.execute("""
+                        ALTER TABLE game_lineups 
+                        ADD COLUMN rebounds_line DECIMAL(5,1) NULL
+                    """)
+                    logger.info("Added rebounds_line column to game_lineups")
+                except Exception:
+                    # Column already exists, ignore
+                    pass
+                
+                # Add over_under_history column if it doesn't exist (for storing OVER/UNDER history JSON)
+                try:
+                    cursor.execute("""
+                        ALTER TABLE game_lineups 
+                        ADD COLUMN over_under_history JSON NULL
+                    """)
+                    logger.info("Added over_under_history column to game_lineups")
+                except Exception:
+                    # Column already exists, ignore
+                    pass
+                
                 # Create team_depth_charts table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS team_depth_charts (
@@ -182,6 +215,50 @@ def create_tables(config: Config) -> None:
                         INDEX idx_player_date (player_id, game_date)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """)
+                
+                # Create player_odds_history table for storing odds history
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS player_odds_history (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        player_id INT NOT NULL,
+                        player_name VARCHAR(100) NOT NULL,
+                        game_id VARCHAR(50) NOT NULL,
+                        game_date DATE NOT NULL,
+                        team_abbr VARCHAR(10) NOT NULL,
+                        points_line DECIMAL(5,1) NOT NULL,
+                        assists_line DECIMAL(5,1) NULL,
+                        rebounds_line DECIMAL(5,1) NULL,
+                        over_odds INT,
+                        under_odds INT,
+                        bookmaker VARCHAR(50),
+                        recorded_at DATETIME NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_player_id (player_id),
+                        INDEX idx_game_id (game_id),
+                        INDEX idx_game_date (game_date),
+                        INDEX idx_recorded_at (recorded_at),
+                        INDEX idx_player_game (player_id, game_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """)
+                
+                # Add assists_line and rebounds_line columns if they don't exist (migration)
+                try:
+                    cursor.execute("""
+                        ALTER TABLE player_odds_history 
+                        ADD COLUMN assists_line DECIMAL(5,1) NULL
+                    """)
+                    logger.info("Added assists_line column to player_odds_history")
+                except Exception:
+                    pass
+                
+                try:
+                    cursor.execute("""
+                        ALTER TABLE player_odds_history 
+                        ADD COLUMN rebounds_line DECIMAL(5,1) NULL
+                    """)
+                    logger.info("Added rebounds_line column to player_odds_history")
+                except Exception:
+                    pass
                 
                 conn.commit()
                 logger.info("Database tables created successfully")

@@ -29,15 +29,17 @@ class OddsAPIPort(ABC):
                              odds_format: str = "american") -> Dict[str, Any]:
         """
         Get player points odds for a specific event.
+        Note: This method name is kept for backward compatibility.
+        The implementation may fetch multiple markets (points, assists, rebounds).
         
         Args:
             event_id: Event identifier from The Odds API
             regions: Regions to get odds from (default: "us")
-            markets: Market type (default: "player_points")
+            markets: Market types (default: "player_points", can include "player_assists", "player_rebounds")
             odds_format: Odds format - "american", "decimal", or "fractional" (default: "american")
             
         Returns:
-            Dictionary with odds information including bookmakers and player points markets
+            Dictionary with odds information including bookmakers and player prop markets
         """
         pass
 
