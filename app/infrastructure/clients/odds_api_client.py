@@ -13,23 +13,22 @@ logger = logging.getLogger(__name__)
 
 class OddsAPIClient(OddsAPIPort):
     """
-    HTTP client for The Odds API.
+    HTTP client for The Odds API microservice.
+    This client now calls the internal Odds API microservice instead of the external API directly.
     """
     
-    def __init__(self, api_key: str, base_url: str = "https://api.the-odds-api.com"):
+    def __init__(self, service_url: str = "http://odds-api-service:8003"):
         """
         Initialize the client.
         
         Args:
-            api_key: The Odds API key
-            base_url: Base URL for the API
+            service_url: Base URL for the Odds API microservice
         """
-        self.api_key = api_key
-        self.base_url = base_url
+        self.service_url = service_url.rstrip('/')
     
     def get_events_for_sport(self, sport: str = "basketball_nba") -> List[Dict[str, Any]]:
         """
-        Get events for a specific sport.
+        Get events for a specific sport from Odds API microservice.
         
         Args:
             sport: Sport key (default: "basketball_nba")
@@ -38,31 +37,25 @@ class OddsAPIClient(OddsAPIPort):
             List of event dictionaries
         """
         try:
-            url = f"{self.base_url}/v4/sports/{sport}/events"
-            params = {
-                'apiKey': self.api_key
-            }
+            url = f"{self.service_url}/api/v1/events"
+            params = {'sport': sport}
             
-            logger.info(f"[ODDS API] REQUEST: Fetching events for sport: {sport}")
-            logger.info(f"[ODDS API] REQUEST URL: {url}")
-            logger.debug(f"[ODDS API] REQUEST PARAMS: {params}")
+            logger.info(f"[ODDS API SERVICE] REQUEST: Fetching events for sport: {sport}")
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             
-            logger.info(f"[ODDS API] RESPONSE: Status {response.status_code}")
-            events = response.json()
-            logger.info(f"[ODDS API] RESPONSE: Received {len(events)} events")
-            
-            return events
-            
+            result = response.json()
+            if result.get('success'):
+                logger.info(f"[ODDS API SERVICE] RESPONSE: Successfully fetched events")
+                return result.get('events', [])
+            else:
+                logger.error(f"[ODDS API SERVICE] RESPONSE ERROR: {result.get('error')}")
+                return []
         except requests.exceptions.RequestException as e:
-            logger.error(f"[ODDS API] REQUEST ERROR: Error fetching events: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"[ODDS API] RESPONSE ERROR: Status {e.response.status_code}")
-                logger.error(f"[ODDS API] RESPONSE ERROR: Body {e.response.text[:500]}")
+            logger.error(f"[ODDS API SERVICE] REQUEST ERROR: Error fetching events: {e}")
             return []
         except Exception as e:
-            logger.error(f"[ODDS API] ERROR: Unexpected error fetching events: {e}")
+            logger.error(f"[ODDS API SERVICE] ERROR: Unexpected error: {e}")
             return []
     
     def get_player_points_odds(self, event_id: str, regions: str = "us", 
@@ -86,109 +79,35 @@ class OddsAPIClient(OddsAPIPort):
             Dictionary with odds information (only FanDuel bookmaker)
         """
         try:
-            # Use the event-specific endpoint which supports player_points market
-            # The general /odds endpoint doesn't support player_points
-            url = f"{self.base_url}/v4/sports/basketball_nba/events/{event_id}/odds"
+            url = f"{self.service_url}/api/v1/events/{event_id}/odds"
             params = {
-                'apiKey': self.api_key,
                 'regions': regions,
                 'markets': markets,
-                'oddsFormat': odds_format
+                'odds_format': odds_format
             }
             
-            logger.info(f"[ODDS API] REQUEST: Fetching player props odds for event {event_id}")
-            logger.info(f"[ODDS API] REQUEST URL: {url}")
-            logger.debug(f"[ODDS API] REQUEST PARAMS: {params}")
+            logger.info(f"[ODDS API SERVICE] REQUEST: Fetching player props odds for event {event_id}")
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             
-            logger.info(f"[ODDS API] RESPONSE: Status {response.status_code}")
-            # Get event data with odds
-            event_data = response.json()
-            
-            if not event_data:
-                logger.warning(f"[ODDS API] RESPONSE: Empty response for event {event_id}")
+            result = response.json()
+            if result.get('success'):
+                logger.info(f"[ODDS API SERVICE] RESPONSE: Successfully fetched odds")
+                return result.get('data', {})
+            else:
+                logger.error(f"[ODDS API SERVICE] RESPONSE ERROR: {result.get('error')}")
                 return {}
-            
-            logger.info(f"[ODDS API] RESPONSE: Received odds data for event {event_id}: {event_data.get('away_team')} @ {event_data.get('home_team')}")
-            
-            # Log the complete raw response from The Odds API
-            logger.info(f"[ODDS API] Raw response for event {event_id}:")
-            logger.info(f"[ODDS API] {json.dumps(event_data, indent=2, default=str)}")
-            
-            # Check what bookmakers are available
-            all_bookmakers = event_data.get('bookmakers', [])
-            if not all_bookmakers:
-                logger.warning(f"No bookmakers found for event {event_id}")
-                return {}
-            
-            bookmaker_keys = [b.get('key', '') for b in all_bookmakers]
-            logger.info(f"Available bookmakers for event {event_id}: {bookmaker_keys}")
-            
-            # Filter to only FanDuel bookmaker
-            filtered_bookmakers = []
-            for bookmaker in all_bookmakers:
-                bookmaker_key = bookmaker.get('key', '').lower()
-                logger.debug(f"Checking bookmaker: {bookmaker_key}")
-                if bookmaker_key == 'fanduel':
-                    # Get all player prop markets (points, assists, rebounds)
-                    markets_list = bookmaker.get('markets', [])
-                    market_keys = [m.get('key', '') for m in markets_list]
-                    logger.info(f"FanDuel markets available: {market_keys}")
-                    
-                    # Filter to player prop markets
-                    player_prop_markets = [m for m in markets_list if m.get('key') in ['player_points', 'player_assists', 'player_rebounds']]
-                    if player_prop_markets:
-                        # Create a bookmaker dict with player prop markets
-                        fanduel_with_props = {
-                            **bookmaker,
-                            'markets': player_prop_markets
-                        }
-                        filtered_bookmakers.append(fanduel_with_props)
-                        logger.info(f"Found FanDuel player props for event {event_id}: {[m.get('key') for m in player_prop_markets]}")
-                    else:
-                        logger.warning(f"FanDuel found but no player prop markets available. Available markets: {market_keys}")
-                    break  # Only need one FanDuel entry
-            
-            if not filtered_bookmakers:
-                logger.warning(f"No FanDuel player props found for event {event_id}. Available bookmakers: {bookmaker_keys}")
-                return {}
-            
-            # Return event data with only FanDuel bookmaker
-            result = {
-                'id': event_data.get('id'),
-                'sport_key': event_data.get('sport_key'),
-                'sport_title': event_data.get('sport_title'),
-                'commence_time': event_data.get('commence_time'),
-                'home_team': event_data.get('home_team'),
-                'away_team': event_data.get('away_team'),
-                'bookmakers': filtered_bookmakers
-            }
-            
-            logger.info(f"Successfully retrieved FanDuel player props for event {event_id}")
-            return result
-            
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"[ODDS API] REQUEST ERROR: HTTP error fetching odds: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"[ODDS API] RESPONSE ERROR: Status {e.response.status_code}")
-                try:
-                    error_body = e.response.json()
-                    logger.error(f"[ODDS API] RESPONSE ERROR: Body {error_body}")
-                except:
-                    logger.error(f"[ODDS API] RESPONSE ERROR: Body (text) {e.response.text[:500]}")
-            return {}
         except requests.exceptions.RequestException as e:
-            logger.error(f"[ODDS API] REQUEST ERROR: Request error fetching odds: {e}")
+            logger.error(f"[ODDS API SERVICE] REQUEST ERROR: Error fetching odds: {e}")
             return {}
         except Exception as e:
-            logger.error(f"[ODDS API] ERROR: Unexpected error fetching odds: {e}", exc_info=True)
+            logger.error(f"[ODDS API SERVICE] ERROR: Unexpected error: {e}")
             return {}
     
     def get_scores(self, sport: str = "basketball_nba", days_from: int = 1, 
                   event_ids: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Get scores for games.
+        Get scores for games from Odds API microservice.
         
         Args:
             sport: Sport key (default: "basketball_nba")
@@ -199,34 +118,30 @@ class OddsAPIClient(OddsAPIPort):
             List of score dictionaries
         """
         try:
-            url = f"{self.base_url}/v4/sports/{sport}/scores"
+            url = f"{self.service_url}/api/v1/scores"
             params = {
-                'apiKey': self.api_key,
-                'daysFrom': days_from
+                'sport': sport,
+                'days_from': days_from
             }
             
             if event_ids:
-                params['eventIds'] = event_ids
+                params['event_ids'] = event_ids
             
-            logger.info(f"[ODDS API] REQUEST: Fetching scores for sport: {sport}, daysFrom: {days_from}")
-            logger.info(f"[ODDS API] REQUEST URL: {url}")
-            logger.debug(f"[ODDS API] REQUEST PARAMS: {params}")
+            logger.info(f"[ODDS API SERVICE] REQUEST: Fetching scores for sport: {sport}")
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             
-            logger.info(f"[ODDS API] RESPONSE: Status {response.status_code}")
-            scores = response.json()
-            logger.info(f"[ODDS API] RESPONSE: Received {len(scores)} scores")
-            
-            return scores
-            
+            result = response.json()
+            if result.get('success'):
+                logger.info(f"[ODDS API SERVICE] RESPONSE: Successfully fetched scores")
+                return result.get('scores', [])
+            else:
+                logger.error(f"[ODDS API SERVICE] RESPONSE ERROR: {result.get('error')}")
+                return []
         except requests.exceptions.RequestException as e:
-            logger.error(f"[ODDS API] REQUEST ERROR: Error fetching scores: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"[ODDS API] RESPONSE ERROR: Status {e.response.status_code}")
-                logger.error(f"[ODDS API] RESPONSE ERROR: Body {e.response.text[:500]}")
+            logger.error(f"[ODDS API SERVICE] REQUEST ERROR: Error fetching scores: {e}")
             return []
         except Exception as e:
-            logger.error(f"[ODDS API] ERROR: Unexpected error fetching scores: {e}")
+            logger.error(f"[ODDS API SERVICE] ERROR: Unexpected error: {e}")
             return []
 

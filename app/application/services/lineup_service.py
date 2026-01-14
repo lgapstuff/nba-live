@@ -45,6 +45,7 @@ class LineupService:
     def import_lineups_for_date(self, date: str) -> Dict[str, Any]:
         """
         Import lineups from FantasyNerds API for a specific date and associate with games.
+        If lineups are not available, fallback to loading rosters from NBA API and saving them as BENCH.
         
         Args:
             date: Date in YYYY-MM-DD format
@@ -58,19 +59,26 @@ class LineupService:
             lineups_data = self.fantasynerds_port.get_lineups_by_date(date)
             logger.info(f"Received lineups data: {type(lineups_data)}, keys: {list(lineups_data.keys()) if isinstance(lineups_data, dict) else 'N/A'}")
             
-            if not lineups_data or 'lineups' not in lineups_data:
-                return {
-                    "success": False,
-                    "message": f"No lineups found for date {date}",
-                    "games_processed": 0,
-                    "lineups_saved": 0
-                }
+            # Get all games for this date from our database
+            games = self.game_repository.get_games_by_date(date)
+            
+            # If no lineups found, try fallback to NBA API rosters
+            if not lineups_data or 'lineups' not in lineups_data or not lineups_data.get('lineups'):
+                logger.warning(f"No lineups found from FantasyNerds for date {date}, attempting fallback to NBA API rosters...")
+                
+                if not games:
+                    return {
+                        "success": False,
+                        "message": f"No lineups found for date {date} and no games found in schedule",
+                        "games_processed": 0,
+                        "lineups_saved": 0
+                    }
+                
+                # Fallback: Load rosters from NBA API and save as BENCH
+                return self._import_rosters_as_bench_for_date(date, games)
             
             lineup_date = lineups_data.get('lineup_date', date)
             lineups = lineups_data.get('lineups', {})
-            
-            # Get all games for this date from our database
-            games = self.game_repository.get_games_by_date(date)
             
             # If no games found for the exact date, try to find games by matching teams
             # This handles cases where lineups are published for a date but games might be on a different date
@@ -155,6 +163,15 @@ class LineupService:
                 error_message = "Error de autenticación con la API de FantasyNerds. Verifica la configuración de la API key."
             elif "timeout" in error_message.lower():
                 error_message = "La solicitud a FantasyNerds tardó demasiado. Intenta nuevamente."
+            
+            # Try fallback to rosters if we have games
+            try:
+                games = self.game_repository.get_games_by_date(date)
+                if games:
+                    logger.info(f"Attempting fallback to NBA API rosters after error...")
+                    return self._import_rosters_as_bench_for_date(date, games)
+            except Exception as fallback_error:
+                logger.error(f"Fallback to rosters also failed: {fallback_error}")
             
             return {
                 "success": False,
@@ -329,6 +346,148 @@ class LineupService:
                 lineup = enriched_lineups[0]
         
         return lineup
+    
+    def _import_rosters_as_bench_for_date(self, date: str, games: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Import rosters from NBA API for games and save all players as BENCH.
+        This is used as a fallback when FantasyNerds lineups are not available.
+        
+        Args:
+            date: Date in YYYY-MM-DD format
+            games: List of game dictionaries
+            
+        Returns:
+            Dictionary with import results
+        """
+        if not self.depth_chart_service:
+            return {
+                "success": False,
+                "message": "Depth chart service not available. Cannot load rosters.",
+                "games_processed": 0,
+                "lineups_saved": 0
+            }
+        
+        games_processed = 0
+        total_players_saved = 0
+        errors = []
+        
+        # Collect all unique teams from all games
+        all_teams = set()
+        for game in games:
+            if game.get('home_team'):
+                all_teams.add(game['home_team'])
+            if game.get('away_team'):
+                all_teams.add(game['away_team'])
+        
+        # First, ensure rosters are loaded in database for all teams
+        # This will skip teams that already have rosters
+        logger.info(f"Ensuring rosters are loaded for {len(all_teams)} teams...")
+        roster_import_result = self.depth_chart_service.import_rosters_for_teams(list(all_teams))
+        
+        if not roster_import_result.get('success'):
+            logger.warning(f"Failed to import some rosters: {roster_import_result.get('message')}")
+            # Continue anyway, we'll try to use what we have
+        
+        # Now process each game and save rosters as BENCH
+        for game in games:
+            game_id = game['game_id']
+            home_team = game.get('home_team')
+            away_team = game.get('away_team')
+            
+            if not home_team or not away_team:
+                logger.warning(f"Game {game_id} missing team information, skipping...")
+                continue
+            
+            game_players_saved = 0
+            
+            # Process both teams
+            for team_abbr in [home_team, away_team]:
+                try:
+                    # Get roster from database
+                    roster_players = self.depth_chart_service.get_players_by_team(team_abbr)
+                    
+                    if not roster_players:
+                        # Try to load from NBA API directly if available
+                        logger.info(f"No roster in database for {team_abbr}, attempting to load from NBA API...")
+                        if hasattr(self.depth_chart_service, 'nba_api') and self.depth_chart_service.nba_api:
+                            from datetime import datetime
+                            current_year = datetime.now().year
+                            current_month = datetime.now().month
+                            if current_month < 10:
+                                season = current_year - 1
+                            else:
+                                season = current_year
+                            season_str = f"{season}-{str(season + 1)[2:]}"
+                            
+                            nba_players = self.depth_chart_service.nba_api.get_team_players(team_abbr, season=season_str)
+                            
+                            if nba_players:
+                                # Convert to roster format
+                                roster_players = []
+                                for nba_player in nba_players:
+                                    roster_players.append({
+                                        'player_id': nba_player.get('id'),
+                                        'player_name': nba_player.get('full_name', ''),
+                                        'player_photo_url': None  # Will be generated by save_bench_player_for_game
+                                    })
+                                logger.info(f"Loaded {len(roster_players)} players from NBA API for {team_abbr}")
+                    
+                    if not roster_players:
+                        logger.warning(f"Could not load roster for team {team_abbr}, skipping...")
+                        errors.append(f"Could not load roster for team {team_abbr}")
+                        continue
+                    
+                    # Delete any existing lineups for this team and game to start fresh
+                    self.lineup_repository.delete_lineups_for_team_game(game_id, date, team_abbr)
+                    
+                    # Save all players as BENCH
+                    logger.info(f"Saving {len(roster_players)} players as BENCH for team {team_abbr} in game {game_id}")
+                    for player in roster_players:
+                        player_id = player.get('player_id', 0)
+                        player_name = player.get('player_name', '')
+                        
+                        if not player_id or not player_name:
+                            continue
+                        
+                        try:
+                            self.lineup_repository.save_bench_player_for_game(
+                                game_id=game_id,
+                                lineup_date=date,
+                                team_abbr=team_abbr,
+                                player_id=player_id,
+                                player_name=player_name,
+                                player_photo_url=player.get('player_photo_url')
+                            )
+                            game_players_saved += 1
+                        except Exception as e:
+                            logger.error(f"Error saving BENCH player {player_name} for team {team_abbr}: {e}")
+                            continue
+                    
+                except Exception as e:
+                    error_msg = f"Error processing roster for team {team_abbr} in game {game_id}: {e}"
+                    logger.error(error_msg, exc_info=True)
+                    errors.append(error_msg)
+                    continue
+            
+            if game_players_saved > 0:
+                games_processed += 1
+                total_players_saved += game_players_saved
+                logger.info(f"Saved {game_players_saved} players as BENCH for game {game_id}")
+        
+        result = {
+            "success": True,
+            "message": f"Successfully loaded rosters as BENCH for {games_processed} games ({total_players_saved} players saved). Los lineups se asignarán como STARTER cuando estén disponibles.",
+            "games_processed": games_processed,
+            "lineups_saved": total_players_saved,
+            "lineup_date": date,
+            "fallback_used": True
+        }
+        
+        if errors:
+            result["errors"] = errors
+            result["error_count"] = len(errors)
+        
+        return result
     
     def _save_lineups_with_depth_chart(self, game_id: str, lineup_date: str,
                                        home_team: str, away_team: str,

@@ -1,5 +1,5 @@
 """
-FantasyNerds HTTP client.
+FantasyNerds HTTP client - Now consumes the FantasyNerds microservice.
 """
 import requests
 import json
@@ -14,21 +14,18 @@ logger = logging.getLogger(__name__)
 
 class FantasyNerdsClient(FantasyNerdsPort):
     """
-    HTTP client for FantasyNerds API.
-    
-    This is a stub for future implementation.
+    HTTP client for FantasyNerds microservice.
+    This client now calls the internal FantasyNerds microservice instead of the external API directly.
     """
     
-    def __init__(self, api_key: str, base_url: str = "https://api.fantasynerds.com"):
+    def __init__(self, service_url: str = "http://fantasynerds-service:8001"):
         """
         Initialize the client.
         
         Args:
-            api_key: FantasyNerds API key
-            base_url: Base URL for the API
+            service_url: Base URL for the FantasyNerds microservice
         """
-        self.api_key = api_key
-        self.base_url = base_url
+        self.service_url = service_url.rstrip('/')
     
     def get_games_for_date(self, date: str) -> List[Dict[str, Any]]:
         """
@@ -58,148 +55,67 @@ class FantasyNerdsClient(FantasyNerdsPort):
     
     def get_lineups_by_date(self, date: str) -> Dict[str, Any]:
         """
-        Get lineups for a specific date from FantasyNerds API.
+        Get lineups for a specific date from FantasyNerds microservice.
         
         Args:
-            date: Date in YYYY-MM-DD format (will be converted to YYYYMMDD)
+            date: Date in YYYY-MM-DD format
             
         Returns:
             Dictionary with lineup information
         """
         try:
-            # Convert date format from YYYY-MM-DD to YYYYMMDD
-            if '-' in date:
-                date_formatted = date.replace('-', '')
+            url = f"{self.service_url}/api/v1/lineups/date/{date}"
+            logger.info(f"[FANTASYNERDS SERVICE] REQUEST: Fetching lineups for date: {date}")
+            logger.info(f"[FANTASYNERDS SERVICE] REQUEST URL: {url}")
+            
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            result = response.json()
+            if result.get('success'):
+                logger.info(f"[FANTASYNERDS SERVICE] RESPONSE: Successfully fetched lineups")
+                return result.get('data', {})
             else:
-                date_formatted = date
-            
-            url = f"{self.base_url}/v1/nba/lineups"
-            params = {
-                'apikey': self.api_key,
-                'date': date_formatted
-            }
-            
-            logger.info(f"[FANTASYNERDS] REQUEST: Fetching lineups for date: {date_formatted}")
-            logger.info(f"[FANTASYNERDS] REQUEST URL: {url}")
-            logger.debug(f"[FANTASYNERDS] REQUEST PARAMS: {params}")
-            response = requests.get(url, params=params, timeout=10)
-            
-            # Check if response is successful
-            logger.info(f"[FANTASYNERDS] RESPONSE: Status {response.status_code}")
-            if not response.ok:
-                error_text = response.text[:500] if response.text else "No error message"
-                logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Status {response.status_code} - {error_text}")
-                # Try to parse as JSON if possible
-                try:
-                    error_json = response.json()
-                    error_msg = error_json.get('message', error_json.get('error', error_text))
-                except:
-                    error_msg = error_text
-                raise requests.exceptions.HTTPError(
-                    f"API returned {response.status_code}: {error_msg}",
-                    response=response
-                )
-            
-            # Check if response has content
-            if not response.text or not response.text.strip():
-                logger.error("FantasyNerds API returned empty response")
-                raise ValueError("Empty response from FantasyNerds API")
-            
-            # Check content type
-            content_type = response.headers.get('Content-Type', '').lower()
-            if 'application/json' not in content_type and 'text/json' not in content_type:
-                logger.warning(f"Unexpected content type: {content_type}")
-            
-            # Try to parse JSON
-            try:
-                # Use response.json() which handles encoding automatically
-                data = response.json()
-                if not isinstance(data, dict):
-                    logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Response is not a dictionary: {type(data)}")
-                    raise ValueError(f"Expected dictionary, got {type(data)}")
-                logger.info(f"[FANTASYNERDS] RESPONSE: Successfully fetched lineups. Found {len(data.get('lineups', {}))} teams")
-                return data
-            except (json.JSONDecodeError, ValueError) as e:
-                # json.JSONDecodeError is raised by response.json() when JSON is invalid
-                # ValueError can be raised by our own validation
-                response_preview = response.text[:500] if response.text else "(empty)"
-                logger.error(f"Failed to decode JSON from FantasyNerds API: {e}")
-                logger.error(f"Response status: {response.status_code}, Content-Type: {content_type}")
-                logger.error(f"Response preview: {response_preview}")
-                raise ValueError(f"Invalid JSON response from FantasyNerds API. Status: {response.status_code}, Error: {str(e)}")
+                error_msg = result.get('error', 'Unknown error')
+                logger.error(f"[FANTASYNERDS SERVICE] RESPONSE ERROR: {error_msg}")
+                raise ValueError(f"FantasyNerds service error: {error_msg}")
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"[FANTASYNERDS] REQUEST ERROR: Error fetching lineups: {e}")
-            raise
-        except ValueError as e:
-            logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Error parsing response: {e}")
+            logger.error(f"[FANTASYNERDS SERVICE] REQUEST ERROR: Error fetching lineups: {e}")
             raise
         except Exception as e:
-            logger.error(f"[FANTASYNERDS] ERROR: Unexpected error fetching lineups: {e}")
+            logger.error(f"[FANTASYNERDS SERVICE] ERROR: Unexpected error: {e}")
             raise
     
     def get_depth_charts(self) -> Dict[str, Any]:
         """
-        Get depth charts for all NBA teams from FantasyNerds API.
+        Get depth charts for all NBA teams from FantasyNerds microservice.
         
         Returns:
             Dictionary with depth charts for all teams
             Format: {"season": 2021, "charts": {"SA": {...}, "DEN": {...}, ...}}
         """
         try:
-            url = f"{self.base_url}/v1/nba/depth"
-            params = {
-                'apikey': self.api_key
-            }
+            url = f"{self.service_url}/api/v1/depth-charts"
+            logger.info(f"[FANTASYNERDS SERVICE] REQUEST: Fetching depth charts")
+            logger.info(f"[FANTASYNERDS SERVICE] REQUEST URL: {url}")
             
-            logger.info(f"[FANTASYNERDS] REQUEST: Fetching depth charts")
-            logger.info(f"[FANTASYNERDS] REQUEST URL: {url}")
-            logger.debug(f"[FANTASYNERDS] REQUEST PARAMS: {params}")
-            response = requests.get(url, params=params, timeout=30)
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
             
-            # Check if response is successful
-            logger.info(f"[FANTASYNERDS] RESPONSE: Status {response.status_code}")
-            if not response.ok:
-                error_text = response.text[:500] if response.text else "No error message"
-                logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Status {response.status_code} - {error_text}")
-                try:
-                    error_json = response.json()
-                    error_msg = error_json.get('message', error_json.get('error', error_text))
-                except:
-                    error_msg = error_text
-                raise requests.exceptions.HTTPError(
-                    f"API returned {response.status_code}: {error_msg}",
-                    response=response
-                )
-            
-            # Check if response has content
-            if not response.text or not response.text.strip():
-                logger.error("FantasyNerds API returned empty response")
-                raise ValueError("Empty response from FantasyNerds API")
-            
-            # Parse JSON
-            try:
-                data = response.json()
-                if not isinstance(data, dict):
-                    logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Response is not a dictionary: {type(data)}")
-                    raise ValueError(f"Expected dictionary, got {type(data)}")
-                
-                charts = data.get('charts', {})
-                logger.info(f"[FANTASYNERDS] RESPONSE: Successfully fetched depth charts. Found {len(charts)} teams")
-                return data
-            except (json.JSONDecodeError, ValueError) as e:
-                response_preview = response.text[:500] if response.text else "(empty)"
-                logger.error(f"Failed to decode JSON from FantasyNerds API: {e}")
-                logger.error(f"Response preview: {response_preview}")
-                raise ValueError(f"Invalid JSON response from FantasyNerds API. Status: {response.status_code}, Error: {str(e)}")
+            result = response.json()
+            if result.get('success'):
+                logger.info(f"[FANTASYNERDS SERVICE] RESPONSE: Successfully fetched depth charts")
+                return result.get('data', {})
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                logger.error(f"[FANTASYNERDS SERVICE] RESPONSE ERROR: {error_msg}")
+                raise ValueError(f"FantasyNerds service error: {error_msg}")
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"[FANTASYNERDS] REQUEST ERROR: Error fetching depth charts: {e}")
-            raise
-        except ValueError as e:
-            logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Error parsing response: {e}")
+            logger.error(f"[FANTASYNERDS SERVICE] REQUEST ERROR: Error fetching depth charts: {e}")
             raise
         except Exception as e:
-            logger.error(f"[FANTASYNERDS] ERROR: Unexpected error fetching depth charts: {e}")
+            logger.error(f"[FANTASYNERDS SERVICE] ERROR: Unexpected error: {e}")
             raise
 

@@ -32,15 +32,16 @@ db_connection = DatabaseConnection(config)
 game_repository = GameRepository(db_connection)
 lineup_repository = LineupRepository(db_connection)
 odds_history_repository = OddsHistoryRepository(db_connection)
-fantasynerds_client = FantasyNerdsClient(config.FANTASYNERDS_API_KEY or "")
-odds_api_client = OddsAPIClient(config.THE_ODDS_API_KEY or "")
+# Initialize clients to consume microservices
+fantasynerds_client = FantasyNerdsClient(config.FANTASYNERDS_SERVICE_URL)
+odds_api_client = OddsAPIClient(config.ODDS_API_SERVICE_URL)
 
-# Initialize NBA API client (optional - may fail if nba_api is not installed)
+# Initialize NBA API client (now consumes microservice)
 nba_client = None
 player_stats_service = None
 game_log_service = None
 try:
-    nba_client = NBAClient()
+    nba_client = NBAClient(config.NBA_API_SERVICE_URL)
     # Initialize game log repository and service
     game_log_repository = GameLogRepository(db_connection)
     game_log_service = GameLogService(nba_client, game_log_repository)

@@ -16,9 +16,14 @@ class Config:
     APP_HOST: str = os.getenv("APP_HOST", "0.0.0.0")
     APP_PORT: int = int(os.getenv("APP_PORT", "8000"))
     
-    # Third-party API keys
+    # Third-party API keys (for backward compatibility, but microservices handle these now)
     FANTASYNERDS_API_KEY: Optional[str] = os.getenv("FANTASYNERDS_API_KEY")
     THE_ODDS_API_KEY: Optional[str] = os.getenv("THE_ODDS_API_KEY")
+    
+    # Microservices URLs
+    FANTASYNERDS_SERVICE_URL: str = os.getenv("FANTASYNERDS_SERVICE_URL", "http://fantasynerds-service:8001")
+    NBA_API_SERVICE_URL: str = os.getenv("NBA_API_SERVICE_URL", "http://nba-api-service:8002")
+    ODDS_API_SERVICE_URL: str = os.getenv("ODDS_API_SERVICE_URL", "http://odds-api-service:8003")
     
     # Cache settings
     CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", "120"))
