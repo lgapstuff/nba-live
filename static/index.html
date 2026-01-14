@@ -13,7 +13,15 @@
                 🏀 NBA Lineups
                 <span class="value-legend-icon" onclick="showValueLegend()" title="Ver leyenda de valores">ℹ️</span>
             </h1>
-            <div class="date-selector">
+            <nav class="main-nav">
+                <button class="nav-tab active" data-view="lineups" onclick="switchView('lineups')">
+                    Lineups
+                </button>
+                <button class="nav-tab" data-view="value-players" onclick="switchView('value-players')">
+                    Jugadores con Valor
+                </button>
+            </nav>
+            <div class="date-selector" id="lineups-actions">
                 <div id="schedule-upload-section" class="hidden">
                     <input type="file" id="schedule-file-input" accept=".json" style="display: none;">
                     <button id="load-schedules-btn" class="main-btn">Cargar Schedule y Rosters (NBA API)</button>
@@ -31,7 +39,13 @@
 
         <div id="error" class="error hidden"></div>
 
-        <div id="games-container" class="games-container"></div>
+        <div id="lineups-view" class="view-section active">
+            <div id="games-container" class="games-container"></div>
+        </div>
+        
+        <div id="value-players-view" class="view-section hidden">
+            <div id="value-players-container" class="value-players-container"></div>
+        </div>
     </div>
 
     <script src="/static/app.js"></script>

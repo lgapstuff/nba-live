@@ -60,7 +60,7 @@ class NBAClient(NBAPort):
                 else:
                     season = f"{current_year}-{str(current_year + 1)[2:]}"
             
-            logger.info(f"Fetching game log for player {player_id}, season {season}, type {season_type}")
+            logger.info(f"[NBA API] REQUEST: Fetching game log for player {player_id}, season {season}, type {season_type}")
             
             # Get player game log
             # PlayerGameLog uses season_type_all_star parameter
@@ -81,10 +81,12 @@ class NBAClient(NBAPort):
             )
             
             # Get data frames - may return empty list if no games found
+            logger.debug(f"[NBA API] Getting data frames from PlayerGameLog...")
             data_frames = game_log.get_data_frames()
+            logger.info(f"[NBA API] RESPONSE: Received {len(data_frames) if data_frames else 0} data frames")
             
             if not data_frames or len(data_frames) == 0:
-                logger.warning(f"No games found for player {player_id} in season {season}")
+                logger.warning(f"[NBA API] RESPONSE: No games found for player {player_id} in season {season}")
                 return []
             
             # Get first data frame (game log)
@@ -92,13 +94,13 @@ class NBAClient(NBAPort):
             
             # Check if dataframe is empty
             if df.empty:
-                logger.warning(f"No games found for player {player_id} in season {season}")
+                logger.warning(f"[NBA API] RESPONSE: Empty data frame for player {player_id} in season {season}")
                 return []
             
             # Convert to list of dictionaries
             games = df.to_dict('records')
             
-            logger.info(f"Retrieved {len(games)} games for player {player_id}")
+            logger.info(f"[NBA API] RESPONSE: Successfully retrieved {len(games)} games for player {player_id}")
             
             return games
             
@@ -106,18 +108,18 @@ class NBAClient(NBAPort):
             # Handle JSON parsing errors (empty response, invalid JSON)
             error_msg = str(e)
             if "Expecting value" in error_msg or "line 1 column 1" in error_msg:
-                logger.warning(f"No games found for player {player_id} (empty response from NBA API)")
+                logger.warning(f"[NBA API] RESPONSE ERROR: No games found for player {player_id} (empty response)")
             else:
-                logger.warning(f"Error fetching game log for player {player_id}: {e}")
+                logger.warning(f"[NBA API] REQUEST ERROR: Error fetching game log for player {player_id}: {e}")
             return []
         except Exception as e:
             error_msg = str(e)
             # Check for pandas import error
             if "pandas" in error_msg.lower() or "DataFrame" in error_msg:
-                logger.error(f"Pandas not available for player {player_id}: {e}")
-                logger.error("Please install pandas: pip install pandas")
+                logger.error(f"[NBA API] ERROR: Pandas not available for player {player_id}: {e}")
+                logger.error("[NBA API] ERROR: Please install pandas: pip install pandas")
             else:
-                logger.warning(f"Error fetching game log for player {player_id}: {e}")
+                logger.warning(f"[NBA API] REQUEST ERROR: Error fetching game log for player {player_id}: {e}")
             return []
     
     def _normalize_name(self, name: str) -> str:
@@ -188,11 +190,11 @@ class NBAClient(NBAPort):
                         logger.info(f"Found NBA player ID {nba_id} for {player_name} (fuzzy match: {full_name})")
                         return nba_id
             
-            logger.warning(f"Could not find NBA player ID for {player_name}")
+            logger.warning(f"[NBA API] REQUEST: Could not find NBA player ID for {player_name}")
             return None
             
         except Exception as e:
-            logger.error(f"Error finding NBA player ID for {player_name}: {e}")
+            logger.error(f"[NBA API] REQUEST ERROR: Error finding NBA player ID for {player_name}: {e}")
             return None
     
     def get_player_last_n_games(self, player_id: int, n: int = 10, 
@@ -217,12 +219,12 @@ class NBAClient(NBAPort):
             # Take the first N games
             last_n_games = games[:n]
             
-            logger.info(f"Retrieved last {len(last_n_games)} games for player {player_id}")
+            logger.info(f"[NBA API] RESPONSE: Retrieved last {len(last_n_games)} games for player {player_id}")
             
             return last_n_games
             
         except Exception as e:
-            logger.error(f"Error fetching last {n} games for player {player_id}: {e}")
+            logger.error(f"[NBA API] REQUEST ERROR: Error fetching last {n} games for player {player_id}: {e}")
             return []
     
     def get_team_players(self, team_abbr: str, season: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -371,6 +373,6 @@ class NBAClient(NBAPort):
             return formatted_players
             
         except Exception as e:
-            logger.error(f"Error fetching team players for {team_abbr}: {e}")
+            logger.error(f"[NBA API] REQUEST ERROR: Error fetching team players for {team_abbr}: {e}")
             return []
 

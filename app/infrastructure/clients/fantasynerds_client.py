@@ -79,13 +79,16 @@ class FantasyNerdsClient(FantasyNerdsPort):
                 'date': date_formatted
             }
             
-            logger.info(f"Fetching lineups from FantasyNerds for date: {date_formatted}")
+            logger.info(f"[FANTASYNERDS] REQUEST: Fetching lineups for date: {date_formatted}")
+            logger.info(f"[FANTASYNERDS] REQUEST URL: {url}")
+            logger.debug(f"[FANTASYNERDS] REQUEST PARAMS: {params}")
             response = requests.get(url, params=params, timeout=10)
             
             # Check if response is successful
+            logger.info(f"[FANTASYNERDS] RESPONSE: Status {response.status_code}")
             if not response.ok:
                 error_text = response.text[:500] if response.text else "No error message"
-                logger.error(f"FantasyNerds API returned {response.status_code}: {error_text}")
+                logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Status {response.status_code} - {error_text}")
                 # Try to parse as JSON if possible
                 try:
                     error_json = response.json()
@@ -112,9 +115,9 @@ class FantasyNerdsClient(FantasyNerdsPort):
                 # Use response.json() which handles encoding automatically
                 data = response.json()
                 if not isinstance(data, dict):
-                    logger.error(f"Response is not a dictionary: {type(data)}")
+                    logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Response is not a dictionary: {type(data)}")
                     raise ValueError(f"Expected dictionary, got {type(data)}")
-                logger.info(f"Successfully fetched lineups from FantasyNerds. Found {len(data.get('lineups', {}))} teams")
+                logger.info(f"[FANTASYNERDS] RESPONSE: Successfully fetched lineups. Found {len(data.get('lineups', {}))} teams")
                 return data
             except (json.JSONDecodeError, ValueError) as e:
                 # json.JSONDecodeError is raised by response.json() when JSON is invalid
@@ -126,13 +129,13 @@ class FantasyNerdsClient(FantasyNerdsPort):
                 raise ValueError(f"Invalid JSON response from FantasyNerds API. Status: {response.status_code}, Error: {str(e)}")
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching lineups from FantasyNerds: {e}")
+            logger.error(f"[FANTASYNERDS] REQUEST ERROR: Error fetching lineups: {e}")
             raise
         except ValueError as e:
-            logger.error(f"Error parsing response from FantasyNerds: {e}")
+            logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Error parsing response: {e}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error fetching lineups: {e}")
+            logger.error(f"[FANTASYNERDS] ERROR: Unexpected error fetching lineups: {e}")
             raise
     
     def get_depth_charts(self) -> Dict[str, Any]:
@@ -149,13 +152,16 @@ class FantasyNerdsClient(FantasyNerdsPort):
                 'apikey': self.api_key
             }
             
-            logger.info("Fetching depth charts from FantasyNerds")
+            logger.info(f"[FANTASYNERDS] REQUEST: Fetching depth charts")
+            logger.info(f"[FANTASYNERDS] REQUEST URL: {url}")
+            logger.debug(f"[FANTASYNERDS] REQUEST PARAMS: {params}")
             response = requests.get(url, params=params, timeout=30)
             
             # Check if response is successful
+            logger.info(f"[FANTASYNERDS] RESPONSE: Status {response.status_code}")
             if not response.ok:
                 error_text = response.text[:500] if response.text else "No error message"
-                logger.error(f"FantasyNerds API returned {response.status_code}: {error_text}")
+                logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Status {response.status_code} - {error_text}")
                 try:
                     error_json = response.json()
                     error_msg = error_json.get('message', error_json.get('error', error_text))
@@ -175,11 +181,11 @@ class FantasyNerdsClient(FantasyNerdsPort):
             try:
                 data = response.json()
                 if not isinstance(data, dict):
-                    logger.error(f"Response is not a dictionary: {type(data)}")
+                    logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Response is not a dictionary: {type(data)}")
                     raise ValueError(f"Expected dictionary, got {type(data)}")
                 
                 charts = data.get('charts', {})
-                logger.info(f"Successfully fetched depth charts from FantasyNerds. Found {len(charts)} teams")
+                logger.info(f"[FANTASYNERDS] RESPONSE: Successfully fetched depth charts. Found {len(charts)} teams")
                 return data
             except (json.JSONDecodeError, ValueError) as e:
                 response_preview = response.text[:500] if response.text else "(empty)"
@@ -188,12 +194,12 @@ class FantasyNerdsClient(FantasyNerdsPort):
                 raise ValueError(f"Invalid JSON response from FantasyNerds API. Status: {response.status_code}, Error: {str(e)}")
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching depth charts from FantasyNerds: {e}")
+            logger.error(f"[FANTASYNERDS] REQUEST ERROR: Error fetching depth charts: {e}")
             raise
         except ValueError as e:
-            logger.error(f"Error parsing response from FantasyNerds: {e}")
+            logger.error(f"[FANTASYNERDS] RESPONSE ERROR: Error parsing response: {e}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error fetching depth charts: {e}")
+            logger.error(f"[FANTASYNERDS] ERROR: Unexpected error fetching depth charts: {e}")
             raise
 

@@ -12,6 +12,13 @@ const loadingDiv = document.getElementById('loading');
 const loadingText = document.getElementById('loading-text');
 const errorDiv = document.getElementById('error');
 const gamesContainer = document.getElementById('games-container');
+const lineupsView = document.getElementById('lineups-view');
+const valuePlayersView = document.getElementById('value-players-view');
+const valuePlayersContainer = document.getElementById('value-players-container');
+const lineupsActions = document.getElementById('lineups-actions');
+
+// Store loaded games data to avoid unnecessary HTTP calls
+let cachedGamesData = null;
 
 // Get today's date in Los Angeles/Tijuana timezone (America/Los_Angeles)
 function getTodayInLATimezone() {
@@ -25,6 +32,32 @@ function getTodayInLATimezone() {
     const day = String(laTime.getDate()).padStart(2, '0');
     
     return `${year}-${month}-${day}`;
+}
+
+// Format time in Los Angeles timezone
+function formatTimeInLATimezone(dateString) {
+    if (!dateString) return 'N/A';
+    try {
+        const date = new Date(dateString);
+        
+        // Use Intl.DateTimeFormat for proper timezone conversion
+        const formatter = new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/Los_Angeles",
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        
+        // Use formatToParts to get individual parts and ensure correct formatting
+        const parts = formatter.formatToParts(date);
+        const hour = parts.find(part => part.type === 'hour')?.value || '00';
+        const minute = parts.find(part => part.type === 'minute')?.value || '00';
+        
+        return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+    } catch (e) {
+        console.error('Error formatting time in LA timezone:', dateString, e);
+        return 'N/A';
+    }
 }
 
 // Event Listeners
@@ -331,6 +364,19 @@ window.loadOddsForGame = async function(gameId, buttonElement) {
             console.log('Odds loaded successfully, updating game card...');
             // Update only this specific game card instead of reloading all games
             await updateGameCardWithLineups(gameId, gameCard);
+            
+            // Update cached games data with the updated game
+            if (cachedGamesData) {
+                const gameIndex = cachedGamesData.findIndex(g => g.game_id === gameId);
+                if (gameIndex !== -1) {
+                    cachedGamesData[gameIndex] = gameData;
+                }
+            }
+            
+            // If value players view is active, refresh it to show updated players (using cached data, no HTTP call)
+            if (valuePlayersView && valuePlayersView.classList.contains('active')) {
+                await loadValuePlayers();
+            }
         } else {
             throw new Error(data.message || 'Error al cargar odds');
         }
@@ -485,6 +531,8 @@ async function loadGames() {
         const data = await response.json();
         
         if (data.success && data.games && data.games.length > 0) {
+            // Cache games data (even without lineups)
+            cachedGamesData = data.games;
             displayGames(data.games);
         } else {
             showEmptyState('No hay juegos disponibles para hoy');
@@ -571,7 +619,6 @@ function createGameCard(game, hasLineups = false) {
                 </button>
         </div>
         <div class="lineups-section">
-            <h3>Lineups</h3>
                 ${createLineupsHTML(lineups, game.away_team, game.away_team_name, game.away_team_logo_url, game.game_id)}
                 ${createLineupsHTML(lineups, game.home_team, game.home_team_name, game.home_team_logo_url, game.game_id)}
         </div>
@@ -641,99 +688,10 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
             ? '<span class="status-badge starter">STARTER</span>' 
             : '<span class="status-badge bench">BENCH</span>';
         
-        // Calculate value levels for each stat type
-        let valueIndicators = [];
-        let hasValuePts = false;
-        let hasValueAst = false;
-        let hasValueReb = false;
-        
-        // Check points value - only if we have valid game logs
-        if (player.over_under_history) {
-            const history = player.over_under_history;
-            const totalGames = history.total_games || 0;
-            
-            // Defensive check: only calculate if we have valid game logs
-            // This prevents showing value when total_games is 0 or invalid
-            if (totalGames > 0 && typeof totalGames === 'number' && !isNaN(totalGames)) {
-                const overCount = history.over_count || 0;
-                const underCount = history.under_count || 0;
-                
-                // Additional validation: over_count + under_count should not exceed total_games significantly
-                // (allowing for pushes, but being defensive)
-                if (overCount + underCount <= totalGames * 1.1) { // Allow 10% margin for pushes
-                    const valueLevel = calculateValueLevel(overCount, underCount, totalGames);
-                    if (valueLevel.level !== 'none') {
-                        valueIndicators.push({ type: 'PTS', ...valueLevel });
-                        hasValuePts = true;
-                    }
-                }
-            }
-        }
-        
-        // Check assists value using assists-specific history if available
-        // Only calculate if assists-specific counts are available (don't use points counts)
-        if (player.assists_line !== null && player.assists_line !== undefined && player.over_under_history) {
-            const history = player.over_under_history;
-            const totalGames = history.total_games || 0;
-            // Defensive check: only calculate if we have valid game logs and assists data
-            if (totalGames > 0 && typeof totalGames === 'number' && !isNaN(totalGames) &&
-                history.assists_over_count !== undefined && history.assists_under_count !== undefined) {
-                const assistsOver = history.assists_over_count;
-                const assistsUnder = history.assists_under_count;
-                // Additional validation: assists counts should not exceed total_games significantly
-                if (assistsOver + assistsUnder <= totalGames * 1.1) {
-                    const valueLevel = calculateValueLevel(assistsOver, assistsUnder, totalGames);
-                    if (valueLevel.level !== 'none') {
-                        valueIndicators.push({ type: 'AST', ...valueLevel });
-                        hasValueAst = true;
-                    }
-                }
-            }
-        }
-        
-        // Check rebounds value using rebounds-specific history if available
-        // Only calculate if rebounds-specific counts are available (don't use points counts)
-        if (player.rebounds_line !== null && player.rebounds_line !== undefined && player.over_under_history) {
-            const history = player.over_under_history;
-            const totalGames = history.total_games || 0;
-            // Defensive check: only calculate if we have valid game logs and rebounds data
-            if (totalGames > 0 && typeof totalGames === 'number' && !isNaN(totalGames) &&
-                history.rebounds_over_count !== undefined && history.rebounds_under_count !== undefined) {
-                const reboundsOver = history.rebounds_over_count;
-                const reboundsUnder = history.rebounds_under_count;
-                // Additional validation: rebounds counts should not exceed total_games significantly
-                if (reboundsOver + reboundsUnder <= totalGames * 1.1) {
-                    const valueLevel = calculateValueLevel(reboundsOver, reboundsUnder, totalGames);
-                    if (valueLevel.level !== 'none') {
-                        valueIndicators.push({ type: 'REB', ...valueLevel });
-                        hasValueReb = true;
-                    }
-                }
-            }
-        }
-        
-        // Find the indicator with the highest percentage to determine card color and which line to highlight
-        // If percentages are equal, prioritize by level (highest > very-high > high > medium)
-        let cardValueClass = '';
-        let highestValueIndicator = null;
-        if (valueIndicators.length > 0) {
-            // Find the indicator with the highest percentage
-            // If percentages are equal, prioritize by level
-            const levelPriority = { 'highest': 4, 'very-high': 3, 'high': 2, 'medium': 1, 'none': 0 };
-            highestValueIndicator = valueIndicators.reduce((max, indicator) => {
-                if (indicator.percentage > max.percentage) {
-                    return indicator;
-                } else if (indicator.percentage === max.percentage) {
-                    // If percentages are equal, compare by level priority
-                    const maxPriority = levelPriority[max.level] || 0;
-                    const indicatorPriority = levelPriority[indicator.level] || 0;
-                    return indicatorPriority > maxPriority ? indicator : max;
-                }
-                return max;
-            }, valueIndicators[0]);
-            
-            cardValueClass = highestValueIndicator.class;
-        }
+        // Use calculatePlayerValuePriority to get consistent value calculation
+        const valueInfo = calculatePlayerValuePriority(player);
+        const cardValueClass = valueInfo.cardValueClass || '';
+        const highestValueIndicator = valueInfo.highestValueIndicator;
         
         // Only highlight the line with the highest value
         const shouldHighlightPts = highestValueIndicator && highestValueIndicator.type === 'PTS';
@@ -786,99 +744,10 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
     }).sort((a, b) => b.valuePriority - a.valuePriority).map(item => item.player);
     
     const benchHTML = sortedBenchPlayers.map(player => {
-        // Calculate value levels for each stat type
-        let valueIndicators = [];
-        let hasValuePts = false;
-        let hasValueAst = false;
-        let hasValueReb = false;
-        
-        // Check points value - only if we have valid game logs
-        if (player.over_under_history) {
-            const history = player.over_under_history;
-            const totalGames = history.total_games || 0;
-            
-            // Defensive check: only calculate if we have valid game logs
-            // This prevents showing value when total_games is 0 or invalid
-            if (totalGames > 0 && typeof totalGames === 'number' && !isNaN(totalGames)) {
-                const overCount = history.over_count || 0;
-                const underCount = history.under_count || 0;
-                
-                // Additional validation: over_count + under_count should not exceed total_games significantly
-                // (allowing for pushes, but being defensive)
-                if (overCount + underCount <= totalGames * 1.1) { // Allow 10% margin for pushes
-                    const valueLevel = calculateValueLevel(overCount, underCount, totalGames);
-                    if (valueLevel.level !== 'none') {
-                        valueIndicators.push({ type: 'PTS', ...valueLevel });
-                        hasValuePts = true;
-                    }
-                }
-            }
-        }
-        
-        // Check assists value using assists-specific history if available
-        // Only calculate if assists-specific counts are available (don't use points counts)
-        if (player.assists_line !== null && player.assists_line !== undefined && player.over_under_history) {
-            const history = player.over_under_history;
-            const totalGames = history.total_games || 0;
-            // Defensive check: only calculate if we have valid game logs and assists data
-            if (totalGames > 0 && typeof totalGames === 'number' && !isNaN(totalGames) &&
-                history.assists_over_count !== undefined && history.assists_under_count !== undefined) {
-                const assistsOver = history.assists_over_count;
-                const assistsUnder = history.assists_under_count;
-                // Additional validation: assists counts should not exceed total_games significantly
-                if (assistsOver + assistsUnder <= totalGames * 1.1) {
-                    const valueLevel = calculateValueLevel(assistsOver, assistsUnder, totalGames);
-                    if (valueLevel.level !== 'none') {
-                        valueIndicators.push({ type: 'AST', ...valueLevel });
-                        hasValueAst = true;
-                    }
-                }
-            }
-        }
-        
-        // Check rebounds value using rebounds-specific history if available
-        // Only calculate if rebounds-specific counts are available (don't use points counts)
-        if (player.rebounds_line !== null && player.rebounds_line !== undefined && player.over_under_history) {
-            const history = player.over_under_history;
-            const totalGames = history.total_games || 0;
-            // Defensive check: only calculate if we have valid game logs and rebounds data
-            if (totalGames > 0 && typeof totalGames === 'number' && !isNaN(totalGames) &&
-                history.rebounds_over_count !== undefined && history.rebounds_under_count !== undefined) {
-                const reboundsOver = history.rebounds_over_count;
-                const reboundsUnder = history.rebounds_under_count;
-                // Additional validation: rebounds counts should not exceed total_games significantly
-                if (reboundsOver + reboundsUnder <= totalGames * 1.1) {
-                    const valueLevel = calculateValueLevel(reboundsOver, reboundsUnder, totalGames);
-                    if (valueLevel.level !== 'none') {
-                        valueIndicators.push({ type: 'REB', ...valueLevel });
-                        hasValueReb = true;
-                    }
-                }
-            }
-        }
-        
-        // Find the indicator with the highest percentage to determine card color and which line to highlight
-        // If percentages are equal, prioritize by level (highest > very-high > high > medium)
-        let cardValueClass = '';
-        let highestValueIndicator = null;
-        if (valueIndicators.length > 0) {
-            // Find the indicator with the highest percentage
-            // If percentages are equal, prioritize by level
-            const levelPriority = { 'highest': 4, 'very-high': 3, 'high': 2, 'medium': 1, 'none': 0 };
-            highestValueIndicator = valueIndicators.reduce((max, indicator) => {
-                if (indicator.percentage > max.percentage) {
-                    return indicator;
-                } else if (indicator.percentage === max.percentage) {
-                    // If percentages are equal, compare by level priority
-                    const maxPriority = levelPriority[max.level] || 0;
-                    const indicatorPriority = levelPriority[indicator.level] || 0;
-                    return indicatorPriority > maxPriority ? indicator : max;
-                }
-                return max;
-            }, valueIndicators[0]);
-            
-            cardValueClass = highestValueIndicator.class;
-        }
+        // Use calculatePlayerValuePriority to get consistent value calculation
+        const valueInfo = calculatePlayerValuePriority(player);
+        const cardValueClass = valueInfo.cardValueClass || '';
+        const highestValueIndicator = valueInfo.highestValueIndicator;
         
         // Only highlight the line with the highest value
         const shouldHighlightPts = highestValueIndicator && highestValueIndicator.type === 'PTS';
@@ -927,7 +796,7 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
             <div class="positions-grid">
                 ${startersHTML}
             </div>
-            ${benchHTML ? `<div class="bench-players"><h4>Jugadores BENCH</h4><div class="bench-players-grid">${benchHTML}</div></div>` : ''}
+            ${benchHTML ? `<div class="bench-players"><div class="bench-players-grid">${benchHTML}</div></div>` : ''}
         </div>
     `;
 }
@@ -1218,6 +1087,7 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
                 <div class="modal-tabs">
                     <button class="modal-tab active" data-tab="game-logs" onclick="switchModalTab('game-logs')">Últimos Juegos</button>
                     <button class="modal-tab" data-tab="odds-history" onclick="switchModalTab('odds-history')">Histórico de Odds</button>
+                    <button class="modal-tab" data-tab="simulator" onclick="switchModalTab('simulator')">Simulador</button>
                 </div>
                 <div class="game-logs-modal-body">
                     <div class="game-logs-loading">Cargando...</div>
@@ -1265,6 +1135,7 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
     // Clear cached content when loading new player
     cachedGameLogsContent = null;
     cachedOddsHistoryData = null;
+    cachedGameLogsData = null;
     
     // Reset to game-logs tab
     const tabs = modal.querySelectorAll('.modal-tab');
@@ -1277,34 +1148,77 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
     });
     
     try {
-        const url = new URL(`${API_BASE_URL}/nba/players/${playerId}/game-logs`);
-        if (playerName) {
-            url.searchParams.append('player_name', playerName);
+        // Load both game logs and odds history in parallel
+        const [gameLogsResponse, oddsHistoryResponse] = await Promise.all([
+            fetch(`${API_BASE_URL}/nba/players/${playerId}/game-logs${playerName ? `?player_name=${encodeURIComponent(playerName)}` : ''}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            }),
+            fetch(`${API_BASE_URL}/nba/players/${playerId}/odds-history${gameId ? `?game_id=${gameId}&limit=200` : '?limit=200'}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            })
+        ]);
+        
+        if (!gameLogsResponse.ok) {
+            throw new Error(`HTTP ${gameLogsResponse.status}`);
         }
         
-        const response = await fetch(url.toString(), {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
+        const gameLogsData = await gameLogsResponse.json();
+        let oddsHistoryData = null;
+        
+        if (oddsHistoryResponse.ok) {
+            const oddsData = await oddsHistoryResponse.json();
+            if (oddsData.success && oddsData.odds_history) {
+                oddsHistoryData = oddsData.odds_history;
             }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
         }
         
-        const data = await response.json();
+        // Create a map of odds history by game_date for quick lookup
+        const oddsByDate = new Map();
+        if (oddsHistoryData && oddsHistoryData.length > 0) {
+            oddsHistoryData.forEach(odds => {
+                if (odds.game_date) {
+                    // Normalize date format for matching (YYYY-MM-DD)
+                    const dateKey = odds.game_date.split('T')[0]; // Remove time if present
+                    if (!oddsByDate.has(dateKey)) {
+                        oddsByDate.set(dateKey, []);
+                    }
+                    oddsByDate.get(dateKey).push(odds);
+                }
+            });
+        }
         
-        if (data.success && data.game_logs && data.game_logs.length > 0) {
+        // Helper function to find odds for a specific game date
+        const findOddsForDate = (gameDate) => {
+            const dateKey = gameDate.split('T')[0]; // Normalize to YYYY-MM-DD
+            const oddsList = oddsByDate.get(dateKey);
+            if (oddsList && oddsList.length > 0) {
+                // Return the most recent odds for that date (first in list since it's sorted DESC)
+                return oddsList[0];
+            }
+            return null;
+        };
+        
+        if (gameLogsData.success && gameLogsData.game_logs && gameLogsData.game_logs.length > 0) {
+            // Store raw game logs data for simulator
+            cachedGameLogsData = gameLogsData.game_logs;
+            
             // Sort by date descending (most recent first)
-            const sortedGames = [...data.game_logs].sort((a, b) => {
+            const sortedGames = [...gameLogsData.game_logs].sort((a, b) => {
                 const dateA = new Date(a.game_date);
                 const dateB = new Date(b.game_date);
                 return dateB - dateA;
             });
             
             // Reorganize game logs by stat type (Puntos, Asistencias, Rebotes)
+            // Match each game with its historical odds if available
             const gamesData = sortedGames.map(game => {
                 const gameDate = formatGameLogDate(game.game_date);
                 const points = game.points !== null && game.points !== undefined 
@@ -1317,103 +1231,154 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
                     ? parseInt(game.rebounds) 
                     : null;
                 
+                // Find historical odds for this game date
+                const historicalOdds = findOddsForDate(game.game_date);
+                
                 return {
                     date: gameDate,
                     rawDate: game.game_date,
                     points: points,
                     assists: assists,
-                    rebounds: rebounds
+                    rebounds: rebounds,
+                    historicalOdds: historicalOdds // Add historical odds to each game
                 };
             });
             
             // Prepare data for each stat type with value calculations
+            // Use historical odds when available, fallback to current line
             const tabsData = [];
             
-            // Points Tab
-            if (pointsLine !== null && !isNaN(pointsLine)) {
+            // Points Tab - check if we have any historical odds or current line
+            const hasPointsData = oddsHistoryData && oddsHistoryData.some(o => o.points_line !== null) || (pointsLine !== null && !isNaN(pointsLine));
+            if (hasPointsData) {
                 const pointsGames = gamesData.filter(g => g.points !== null);
                 const pointsResults = pointsGames.map(game => {
-                    const result = game.points > pointsLine ? 'OVER' : (game.points < pointsLine ? 'UNDER' : 'PUSH');
-                    return { ...game, result: result, statType: 'points', statValue: game.points, line: pointsLine };
-                });
+                    // Use historical odds line if available, otherwise use current line
+                    const line = game.historicalOdds && game.historicalOdds.points_line !== null 
+                        ? game.historicalOdds.points_line 
+                        : (pointsLine !== null && !isNaN(pointsLine) ? pointsLine : null);
+                    
+                    if (line === null) {
+                        return null; // Skip games without a line
+                    }
+                    
+                    const result = game.points > line ? 'OVER' : (game.points < line ? 'UNDER' : 'PUSH');
+                    return { ...game, result: result, statType: 'points', statValue: game.points, line: line, hasHistoricalLine: !!game.historicalOdds };
+                }).filter(g => g !== null); // Remove null entries
                 
-                const pointsOver = pointsResults.filter(g => g.result === 'OVER').length;
-                const pointsUnder = pointsResults.filter(g => g.result === 'UNDER').length;
-                const pointsPush = pointsResults.filter(g => g.result === 'PUSH').length;
-                const totalGames = pointsResults.length;
-                
-                // Calculate value level for points
-                const pointsValueLevel = calculateValueLevel(pointsOver, pointsUnder, totalGames);
-                
-                tabsData.push({
-                    type: 'points',
-                    label: 'Puntos',
-                    valueLevel: pointsValueLevel,
-                    results: pointsResults,
-                    over: pointsOver,
-                    under: pointsUnder,
-                    push: pointsPush,
-                    total: totalGames,
-                    line: pointsLine
-                });
+                if (pointsResults.length > 0) {
+                    const pointsOver = pointsResults.filter(g => g.result === 'OVER').length;
+                    const pointsUnder = pointsResults.filter(g => g.result === 'UNDER').length;
+                    const pointsPush = pointsResults.filter(g => g.result === 'PUSH').length;
+                    const totalGames = pointsResults.length;
+                    
+                    // Calculate value level for points
+                    const pointsValueLevel = calculateValueLevel(pointsOver, pointsUnder, totalGames);
+                    
+                    // Use current line for display if no historical data, otherwise use average or most common
+                    const displayLine = pointsLine !== null && !isNaN(pointsLine) ? pointsLine : 
+                        (pointsResults.length > 0 ? pointsResults[0].line : null);
+                    
+                    tabsData.push({
+                        type: 'points',
+                        label: 'Puntos',
+                        valueLevel: pointsValueLevel,
+                        results: pointsResults,
+                        over: pointsOver,
+                        under: pointsUnder,
+                        push: pointsPush,
+                        total: totalGames,
+                        line: displayLine
+                    });
+                }
             }
             
             // Assists Tab
-            if (assistsLine !== null && !isNaN(assistsLine)) {
+            const hasAssistsData = oddsHistoryData && oddsHistoryData.some(o => o.assists_line !== null) || (assistsLine !== null && !isNaN(assistsLine));
+            if (hasAssistsData) {
                 const assistsGames = gamesData.filter(g => g.assists !== null);
                 const assistsResults = assistsGames.map(game => {
-                    const result = game.assists > assistsLine ? 'OVER' : (game.assists < assistsLine ? 'UNDER' : 'PUSH');
-                    return { ...game, result: result, statType: 'assists', statValue: game.assists, line: assistsLine };
-                });
+                    // Use historical odds line if available, otherwise use current line
+                    const line = game.historicalOdds && game.historicalOdds.assists_line !== null 
+                        ? game.historicalOdds.assists_line 
+                        : (assistsLine !== null && !isNaN(assistsLine) ? assistsLine : null);
+                    
+                    if (line === null) {
+                        return null; // Skip games without a line
+                    }
+                    
+                    const result = game.assists > line ? 'OVER' : (game.assists < line ? 'UNDER' : 'PUSH');
+                    return { ...game, result: result, statType: 'assists', statValue: game.assists, line: line, hasHistoricalLine: !!game.historicalOdds };
+                }).filter(g => g !== null);
                 
-                const assistsOver = assistsResults.filter(g => g.result === 'OVER').length;
-                const assistsUnder = assistsResults.filter(g => g.result === 'UNDER').length;
-                const assistsPush = assistsResults.filter(g => g.result === 'PUSH').length;
-                const totalGames = assistsResults.length;
-                
-                // Calculate value level for assists
-                const assistsValueLevel = calculateValueLevel(assistsOver, assistsUnder, totalGames);
-                
-                tabsData.push({
-                    type: 'assists',
-                    label: 'Asistencias',
-                    valueLevel: assistsValueLevel,
-                    results: assistsResults,
-                    over: assistsOver,
-                    under: assistsUnder,
-                    push: assistsPush,
-                    total: totalGames,
-                    line: assistsLine
-                });
+                if (assistsResults.length > 0) {
+                    const assistsOver = assistsResults.filter(g => g.result === 'OVER').length;
+                    const assistsUnder = assistsResults.filter(g => g.result === 'UNDER').length;
+                    const assistsPush = assistsResults.filter(g => g.result === 'PUSH').length;
+                    const totalGames = assistsResults.length;
+                    
+                    // Calculate value level for assists
+                    const assistsValueLevel = calculateValueLevel(assistsOver, assistsUnder, totalGames);
+                    
+                    const displayLine = assistsLine !== null && !isNaN(assistsLine) ? assistsLine : 
+                        (assistsResults.length > 0 ? assistsResults[0].line : null);
+                    
+                    tabsData.push({
+                        type: 'assists',
+                        label: 'Asistencias',
+                        valueLevel: assistsValueLevel,
+                        results: assistsResults,
+                        over: assistsOver,
+                        under: assistsUnder,
+                        push: assistsPush,
+                        total: totalGames,
+                        line: displayLine
+                    });
+                }
             }
             
             // Rebounds Tab
-            if (reboundsLine !== null && !isNaN(reboundsLine)) {
+            const hasReboundsData = oddsHistoryData && oddsHistoryData.some(o => o.rebounds_line !== null) || (reboundsLine !== null && !isNaN(reboundsLine));
+            if (hasReboundsData) {
                 const reboundsGames = gamesData.filter(g => g.rebounds !== null);
                 const reboundsResults = reboundsGames.map(game => {
-                    const result = game.rebounds > reboundsLine ? 'OVER' : (game.rebounds < reboundsLine ? 'UNDER' : 'PUSH');
-                    return { ...game, result: result, statType: 'rebounds', statValue: game.rebounds, line: reboundsLine };
-                });
+                    // Use historical odds line if available, otherwise use current line
+                    const line = game.historicalOdds && game.historicalOdds.rebounds_line !== null 
+                        ? game.historicalOdds.rebounds_line 
+                        : (reboundsLine !== null && !isNaN(reboundsLine) ? reboundsLine : null);
+                    
+                    if (line === null) {
+                        return null; // Skip games without a line
+                    }
+                    
+                    const result = game.rebounds > line ? 'OVER' : (game.rebounds < line ? 'UNDER' : 'PUSH');
+                    return { ...game, result: result, statType: 'rebounds', statValue: game.rebounds, line: line, hasHistoricalLine: !!game.historicalOdds };
+                }).filter(g => g !== null);
                 
-                const reboundsOver = reboundsResults.filter(g => g.result === 'OVER').length;
-                const reboundsUnder = reboundsResults.filter(g => g.result === 'UNDER').length;
-                const reboundsPush = reboundsResults.filter(g => g.result === 'PUSH').length;
-                const totalGames = reboundsResults.length;
-                
-                // Calculate value level for rebounds
-                const reboundsValueLevel = calculateValueLevel(reboundsOver, reboundsUnder, totalGames);
-                
-                tabsData.push({
-                    type: 'rebounds',
-                    label: 'Rebotes',
-                    valueLevel: reboundsValueLevel,
-                    results: reboundsResults,
-                    over: reboundsOver,
-                    under: reboundsUnder,
-                    push: reboundsPush,
-                    total: totalGames,
-                    line: reboundsLine
-                });
+                if (reboundsResults.length > 0) {
+                    const reboundsOver = reboundsResults.filter(g => g.result === 'OVER').length;
+                    const reboundsUnder = reboundsResults.filter(g => g.result === 'UNDER').length;
+                    const reboundsPush = reboundsResults.filter(g => g.result === 'PUSH').length;
+                    const totalGames = reboundsResults.length;
+                    
+                    // Calculate value level for rebounds
+                    const reboundsValueLevel = calculateValueLevel(reboundsOver, reboundsUnder, totalGames);
+                    
+                    const displayLine = reboundsLine !== null && !isNaN(reboundsLine) ? reboundsLine : 
+                        (reboundsResults.length > 0 ? reboundsResults[0].line : null);
+                    
+                    tabsData.push({
+                        type: 'rebounds',
+                        label: 'Rebotes',
+                        valueLevel: reboundsValueLevel,
+                        results: reboundsResults,
+                        over: reboundsOver,
+                        under: reboundsUnder,
+                        push: reboundsPush,
+                        total: totalGames,
+                        line: displayLine
+                    });
+                }
             }
             
             if (tabsData.length > 0) {
@@ -1473,6 +1438,7 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
                                     <tr>
                                         <th>Fecha</th>
                                         <th>${statColumn}</th>
+                                        <th>Línea</th>
                                         <th>Resultado</th>
                                     </tr>
                                 </thead>
@@ -1480,10 +1446,18 @@ window.toggleGameLogs = async function(playerId, buttonElement) {
                                     ${tab.results.map(game => {
                                         const resultClass = game.result.toLowerCase();
                                         const statValue = tab.type === 'points' ? game.points.toFixed(1) : (tab.type === 'assists' ? game.assists : game.rebounds);
+                                        // Show the line used for this specific game (historical if available)
+                                        const gameLine = game.line !== null && game.line !== undefined ? game.line.toFixed(1) : 'N/A';
+                                        const lineDisplay = gameLine !== 'N/A' ? gameLine : '-';
+                                        const lineTitle = game.hasHistoricalLine ? `Línea histórica: ${gameLine}` : `Línea actual: ${gameLine}`;
                                         return `
                                             <tr class="game-log-row" data-stat-type="${tab.type}" data-result="${resultClass}">
                                                 <td class="game-log-date-cell">${game.date}</td>
                                                 <td class="game-log-${tab.type}-cell">${statValue}</td>
+                                                <td class="game-log-line-cell" title="${lineTitle}">
+                                                    ${lineDisplay}
+                                                    ${game.hasHistoricalLine ? ' <span class="historical-line-indicator" title="Línea histórica">📊</span>' : ''}
+                                                </td>
                                                 <td class="game-log-result-cell">
                                                     <span class="result-badge ${resultClass}">${game.result}</span>
                                                 </td>
@@ -1573,6 +1547,7 @@ window.closeGameLogsModal = function() {
         // Clear cached content
         cachedGameLogsContent = null;
         cachedOddsHistoryData = null;
+        cachedGameLogsData = null;
     }
 };
 
@@ -1609,6 +1584,7 @@ window.switchGameLogsStatTab = function(statType) {
 
 // Store original game logs content
 let cachedGameLogsContent = null;
+let cachedGameLogsData = null; // Store raw game logs data for simulator
 
 // Switch modal tab
 window.switchModalTab = function(tabName) {
@@ -1636,9 +1612,12 @@ window.switchModalTab = function(tabName) {
         if (cachedGameLogsContent) {
             modalBody.innerHTML = cachedGameLogsContent;
         }
-    } else {
+    } else if (tabName === 'odds-history') {
         // Load odds history
         loadOddsHistory();
+    } else if (tabName === 'simulator') {
+        // Load simulator
+        loadSimulator();
     }
 };
 
@@ -1759,12 +1738,12 @@ function renderOddsHistoryTable(history, type) {
             </thead>
             <tbody>
                 ${history.map(entry => {
-                    const recordedDate = new Date(entry.recorded_at);
-                    // Show only time, not date
-                    const timeStr = recordedDate.toLocaleTimeString('es-ES', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
+                    // Format time in Los Angeles timezone
+                    // Debug: log the original date string
+                    if (entry.recorded_at) {
+                        console.log('Original recorded_at:', entry.recorded_at, 'Parsed Date:', new Date(entry.recorded_at));
+                    }
+                    const timeStr = formatTimeInLATimezone(entry.recorded_at);
                     
                     let lineValue;
                     if (type === 'points') {
@@ -1815,6 +1794,213 @@ window.switchOddsHistoryTab = function(type) {
             content.classList.remove('active');
         }
     });
+};
+
+// Load simulator
+function loadSimulator() {
+    const modal = document.getElementById('game-logs-modal');
+    if (!modal) return;
+    
+    const modalBody = modal.querySelector('.game-logs-modal-body');
+    
+    if (!cachedGameLogsData || cachedGameLogsData.length === 0) {
+        modalBody.innerHTML = '<div class="no-game-logs">No hay game logs disponibles para simular.</div>';
+        return;
+    }
+    
+    // Sort games by date descending (most recent first)
+    const sortedGames = [...cachedGameLogsData].sort((a, b) => {
+        const dateA = new Date(a.game_date);
+        const dateB = new Date(b.game_date);
+        return dateB - dateA;
+    });
+    
+    // Limit to top 25 games
+    const topGames = sortedGames.slice(0, 25);
+    
+    // Prepare games data
+    const gamesData = topGames.map(game => {
+        const gameDate = formatGameLogDate(game.game_date);
+        const points = game.points !== null && game.points !== undefined 
+            ? parseFloat(game.points) 
+            : null;
+        const assists = game.assists !== null && game.assists !== undefined 
+            ? parseInt(game.assists) 
+            : null;
+        const rebounds = game.rebounds !== null && game.rebounds !== undefined 
+            ? parseInt(game.rebounds) 
+            : null;
+        
+        return {
+            date: gameDate,
+            rawDate: game.game_date,
+            points: points,
+            assists: assists,
+            rebounds: rebounds
+        };
+    });
+    
+    // Create simulator interface
+    modalBody.innerHTML = `
+        <div class="simulator-container">
+            <div class="simulator-inputs">
+                <div class="simulator-input-group">
+                    <label for="simulator-points-line">Línea de Puntos:</label>
+                    <input type="number" id="simulator-points-line" step="0.5" placeholder="Ej: 10.5" 
+                           onkeypress="if(event.key === 'Enter') calculateSimulator('points')" />
+                    <button class="simulator-calculate-btn" onclick="calculateSimulator('points')">Calcular</button>
+                </div>
+                <div class="simulator-input-group">
+                    <label for="simulator-assists-line">Línea de Asistencias:</label>
+                    <input type="number" id="simulator-assists-line" step="0.5" placeholder="Ej: 5.5" 
+                           onkeypress="if(event.key === 'Enter') calculateSimulator('assists')" />
+                    <button class="simulator-calculate-btn" onclick="calculateSimulator('assists')">Calcular</button>
+                </div>
+                <div class="simulator-input-group">
+                    <label for="simulator-rebounds-line">Línea de Rebotes:</label>
+                    <input type="number" id="simulator-rebounds-line" step="0.5" placeholder="Ej: 8.5" 
+                           onkeypress="if(event.key === 'Enter') calculateSimulator('rebounds')" />
+                    <button class="simulator-calculate-btn" onclick="calculateSimulator('rebounds')">Calcular</button>
+                </div>
+            </div>
+            <div class="simulator-results" id="simulator-results">
+                <div class="simulator-placeholder">
+                    <p>Ingresa una línea y haz clic en "Calcular" o presiona Enter para ver los resultados</p>
+                    <p class="simulator-info">Basado en los últimos ${topGames.length} juegos disponibles</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Store games data in a data attribute for the calculate function
+    modalBody.setAttribute('data-simulator-games', JSON.stringify(gamesData));
+}
+
+// Calculate simulator results
+window.calculateSimulator = function(statType) {
+    const modal = document.getElementById('game-logs-modal');
+    if (!modal) return;
+    
+    const modalBody = modal.querySelector('.game-logs-modal-body');
+    const gamesDataJson = modalBody.getAttribute('data-simulator-games');
+    
+    if (!gamesDataJson) {
+        return;
+    }
+    
+    const gamesData = JSON.parse(gamesDataJson);
+    const lineInput = document.getElementById(`simulator-${statType}-line`);
+    const line = lineInput ? parseFloat(lineInput.value) : null;
+    
+    if (line === null || isNaN(line)) {
+        alert('Por favor ingresa una línea válida');
+        return;
+    }
+    
+    // Filter games with valid stat data
+    const validGames = gamesData.filter(g => g[statType] !== null && g[statType] !== undefined);
+    
+    if (validGames.length === 0) {
+        alert(`No hay datos de ${statType === 'points' ? 'puntos' : statType === 'assists' ? 'asistencias' : 'rebotes'} disponibles`);
+        return;
+    }
+    
+    // Calculate results
+    const results = validGames.map(game => {
+        const statValue = game[statType];
+        const result = statValue > line ? 'OVER' : (statValue < line ? 'UNDER' : 'PUSH');
+        return { ...game, result: result, statValue: statValue, line: line };
+    });
+    
+    const overCount = results.filter(g => g.result === 'OVER').length;
+    const underCount = results.filter(g => g.result === 'UNDER').length;
+    const pushCount = results.filter(g => g.result === 'PUSH').length;
+    const totalGames = results.length;
+    
+    // Calculate percentages
+    const overPercentage = totalGames > 0 ? ((overCount / totalGames) * 100).toFixed(1) : '0.0';
+    const underPercentage = totalGames > 0 ? ((underCount / totalGames) * 100).toFixed(1) : '0.0';
+    
+    // Calculate value level
+    const valueLevel = calculateValueLevel(overCount, underCount, totalGames);
+    
+    // Determine which result has value
+    const maxPercentage = Math.max(parseFloat(overPercentage), parseFloat(underPercentage));
+    const hasValue = maxPercentage >= 60;
+    const valueDirection = parseFloat(overPercentage) > parseFloat(underPercentage) ? 'OVER' : 'UNDER';
+    
+    // Create results HTML
+    const statLabel = statType === 'points' ? 'Puntos' : (statType === 'assists' ? 'Asistencias' : 'Rebotes');
+    const statColumn = statType === 'points' ? 'Puntos' : (statType === 'assists' ? 'Asistencias' : 'Rebotes');
+    
+    const resultsHTML = `
+        <div class="simulator-result-section">
+            <div class="value-section-summary">
+                <div class="summary-item">
+                    <span class="summary-label">Total:</span>
+                    <span class="summary-value">${totalGames}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">OVER:</span>
+                    <span class="summary-value over">${overCount}</span>
+                    <span class="summary-probability">(${overPercentage}%)</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">UNDER:</span>
+                    <span class="summary-value under">${underCount}</span>
+                    <span class="summary-probability">(${underPercentage}%)</span>
+                </div>
+                ${pushCount > 0 ? `
+                <div class="summary-item">
+                    <span class="summary-label">PUSH:</span>
+                    <span class="summary-value push">${pushCount}</span>
+                </div>
+                ` : ''}
+                <div class="summary-item">
+                    <span class="summary-label">Línea Simulada:</span>
+                    <span class="summary-value">${line.toFixed(1)}</span>
+                </div>
+                ${hasValue ? `
+                <div class="summary-item ${valueLevel.class}">
+                    <span class="summary-label">Valor:</span>
+                    <span class="summary-value">${valueLevel.indicator || ''} ${valueDirection} ${maxPercentage}%</span>
+                </div>
+                ` : ''}
+            </div>
+            <table class="game-logs-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>${statColumn}</th>
+                        <th>Línea</th>
+                        <th>Resultado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${results.map(game => {
+                        const resultClass = game.result.toLowerCase();
+                        const statValue = statType === 'points' ? game.points.toFixed(1) : (statType === 'assists' ? game.assists : game.rebounds);
+                        return `
+                            <tr class="game-log-row" data-stat-type="${statType}" data-result="${resultClass}">
+                                <td class="game-log-date-cell">${game.date}</td>
+                                <td class="game-log-${statType}-cell">${statValue}</td>
+                                <td class="game-log-line-cell">${game.line.toFixed(1)}</td>
+                                <td class="game-log-result-cell">
+                                    <span class="result-badge ${resultClass}">${game.result}</span>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    // Update results section
+    const resultsContainer = document.getElementById('simulator-results');
+    if (resultsContainer) {
+        resultsContainer.innerHTML = resultsHTML;
+    }
 };
 
 // Format odds (American format)
@@ -1936,6 +2122,294 @@ window.closeValueLegend = function() {
         document.body.style.overflow = '';
     }
 };
+
+// Switch between views (tabs)
+window.switchView = function(viewName) {
+    // Update tab buttons
+    const tabs = document.querySelectorAll('.nav-tab');
+    tabs.forEach(tab => {
+        if (tab.getAttribute('data-view') === viewName) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Show/hide view sections
+    if (viewName === 'lineups') {
+        lineupsView.classList.remove('hidden');
+        lineupsView.classList.add('active');
+        valuePlayersView.classList.add('hidden');
+        valuePlayersView.classList.remove('active');
+        lineupsActions.classList.remove('hidden');
+    } else if (viewName === 'value-players') {
+        lineupsView.classList.add('hidden');
+        lineupsView.classList.remove('active');
+        valuePlayersView.classList.remove('hidden');
+        valuePlayersView.classList.add('active');
+        lineupsActions.classList.add('hidden');
+        // Load value players when switching to this view
+        loadValuePlayers();
+    }
+};
+
+// Load all players with value from all games (using cached data if available)
+async function loadValuePlayers() {
+    valuePlayersContainer.innerHTML = '';
+    
+    // Use cached games data if available (no HTTP call needed)
+    let gamesData = cachedGamesData;
+    
+    // Only make HTTP call if we don't have cached data
+    if (!gamesData || gamesData.length === 0) {
+        const today = getTodayInLATimezone();
+        
+        // Show loading only if we need to fetch data
+        loadingText.textContent = 'Cargando jugadores con valor...';
+        showLoading();
+        hideError();
+        
+        try {
+            // Get all games with lineups for today
+            const response = await fetch(`${API_BASE_URL}/nba/lineups?date=${today}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Error ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success && data.games && data.games.length > 0) {
+                gamesData = data.games;
+                // Cache the data for future use
+                cachedGamesData = gamesData;
+            } else {
+                valuePlayersContainer.innerHTML = `
+                    <div class="empty-state">
+                        <h2>📋 Sin jugadores con valor</h2>
+                        <p>No hay jugadores con valor disponibles. Asegúrate de haber cargado los odds para los juegos de hoy.</p>
+                    </div>
+                `;
+                hideLoading();
+                return;
+            }
+        } catch (error) {
+            console.error('Error loading value players:', error);
+            showError(`Error al cargar jugadores con valor: ${error.message || error}`);
+            hideLoading();
+            return;
+        }
+    }
+    
+    // Process games data (from cache or fresh fetch)
+    try {
+        if (gamesData && gamesData.length > 0) {
+            // Extract all players with value from all games
+            const playersWithValue = [];
+            
+            gamesData.forEach(game => {
+                if (!game.lineups) return;
+                
+                // Process each team's lineup
+                Object.keys(game.lineups).forEach(teamAbbr => {
+                    const teamLineup = game.lineups[teamAbbr];
+                    const positions = ['PG', 'SG', 'SF', 'PF', 'C'];
+                    
+                    // Process starters
+                    positions.forEach(position => {
+                        const player = teamLineup[position];
+                        if (player && player.over_under_history && player.over_under_history.total_games > 0) {
+                            const valueInfo = calculatePlayerValuePriority(player);
+                            if (valueInfo.priority > 0) {
+                                playersWithValue.push({
+                                    ...player,
+                                    position: position,
+                                    team: teamAbbr,
+                                    teamName: game[`${teamAbbr === game.away_team ? 'away' : 'home'}_team_name`] || teamAbbr,
+                                    gameId: game.game_id,
+                                    gameDate: game.game_date,
+                                    gameTime: game.game_time,
+                                    opponent: teamAbbr === game.away_team ? game.home_team_name : game.away_team_name,
+                                    valuePriority: valueInfo.priority,
+                                    valueClass: valueInfo.cardValueClass,
+                                    status: 'STARTER'
+                                });
+                            }
+                        }
+                    });
+                    
+                    // Process bench players
+                    if (teamLineup['BENCH']) {
+                        const benchPlayers = Array.isArray(teamLineup['BENCH']) 
+                            ? teamLineup['BENCH'] 
+                            : [teamLineup['BENCH']];
+                        
+                        benchPlayers.forEach(player => {
+                            if (player && player.over_under_history && player.over_under_history.total_games > 0) {
+                                const valueInfo = calculatePlayerValuePriority(player);
+                                if (valueInfo.priority > 0) {
+                                    playersWithValue.push({
+                                        ...player,
+                                        position: 'BENCH',
+                                        team: teamAbbr,
+                                        teamName: game[`${teamAbbr === game.away_team ? 'away' : 'home'}_team_name`] || teamAbbr,
+                                        gameId: game.game_id,
+                                        gameDate: game.game_date,
+                                        gameTime: game.game_time,
+                                        opponent: teamAbbr === game.away_team ? game.home_team_name : game.away_team_name,
+                                        valuePriority: valueInfo.priority,
+                                        valueClass: valueInfo.cardValueClass,
+                                        status: 'BENCH'
+                                    });
+                                }
+                            }
+                        });
+                    }
+                });
+            });
+            
+            // Sort by value priority (highest first)
+            playersWithValue.sort((a, b) => b.valuePriority - a.valuePriority);
+            
+            // Display players
+            displayValuePlayers(playersWithValue);
+        } else {
+            valuePlayersContainer.innerHTML = `
+                <div class="empty-state">
+                    <h2>📋 Sin jugadores con valor</h2>
+                    <p>No hay jugadores con valor disponibles. Asegúrate de haber cargado los odds para los juegos de hoy.</p>
+                </div>
+            `;
+        }
+        
+    } catch (error) {
+        console.error('Error loading value players:', error);
+        showError(`Error al cargar jugadores con valor: ${error.message || error}`);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Display players with value
+function displayValuePlayers(players) {
+    if (players.length === 0) {
+        valuePlayersContainer.innerHTML = `
+            <div class="empty-state">
+                <h2>📋 Sin jugadores con valor</h2>
+                <p>No hay jugadores con valor disponibles. Asegúrate de haber cargado los odds para los juegos de hoy.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const playersHTML = players.map(player => {
+        const valueIndicators = [];
+        const history = player.over_under_history;
+        
+        // Calculate which stats have value
+        if (history.total_games > 0) {
+            const overCount = history.over_count || 0;
+            const underCount = history.under_count || 0;
+            const valueLevel = calculateValueLevel(overCount, underCount, history.total_games);
+            if (valueLevel.level !== 'none') {
+                valueIndicators.push({ type: 'PTS', ...valueLevel });
+            }
+        }
+        
+        if (player.assists_line !== null && player.assists_line !== undefined && 
+            history.assists_over_count !== undefined && history.assists_under_count !== undefined) {
+            const assistsOver = history.assists_over_count;
+            const assistsUnder = history.assists_under_count;
+            const valueLevel = calculateValueLevel(assistsOver, assistsUnder, history.total_games);
+            if (valueLevel.level !== 'none') {
+                valueIndicators.push({ type: 'AST', ...valueLevel });
+            }
+        }
+        
+        if (player.rebounds_line !== null && player.rebounds_line !== undefined && 
+            history.rebounds_over_count !== undefined && history.rebounds_under_count !== undefined) {
+            const reboundsOver = history.rebounds_over_count;
+            const reboundsUnder = history.rebounds_under_count;
+            const valueLevel = calculateValueLevel(reboundsOver, reboundsUnder, history.total_games);
+            if (valueLevel.level !== 'none') {
+                valueIndicators.push({ type: 'REB', ...valueLevel });
+            }
+        }
+        
+        // Find highest value indicator
+        const levelPriority = { 'highest': 4, 'very-high': 3, 'high': 2, 'medium': 1, 'none': 0 };
+        const highestValueIndicator = valueIndicators.length > 0 ? valueIndicators.reduce((max, indicator) => {
+            if (indicator.percentage > max.percentage) {
+                return indicator;
+            } else if (indicator.percentage === max.percentage) {
+                const maxPriority = levelPriority[max.level] || 0;
+                const indicatorPriority = levelPriority[indicator.level] || 0;
+                return indicatorPriority > maxPriority ? indicator : max;
+            }
+            return max;
+        }, valueIndicators[0]) : null;
+        
+        const shouldHighlightPts = highestValueIndicator && highestValueIndicator.type === 'PTS';
+        const shouldHighlightAst = highestValueIndicator && highestValueIndicator.type === 'AST';
+        const shouldHighlightReb = highestValueIndicator && highestValueIndicator.type === 'REB';
+        
+        const pointsLine = player.points_line !== null && player.points_line !== undefined 
+            ? `<div class="player-points ${shouldHighlightPts ? 'has-value' : ''}">${player.points_line} pts</div>` 
+            : '<div class="player-points empty">-</div>';
+        const assistsLine = player.assists_line !== null && player.assists_line !== undefined 
+            ? `<div class="player-assists ${shouldHighlightAst ? 'has-value' : ''}">${player.assists_line} ast</div>` 
+            : '<div class="player-assists empty">-</div>';
+        const reboundsLine = player.rebounds_line !== null && player.rebounds_line !== undefined 
+            ? `<div class="player-rebounds ${shouldHighlightReb ? 'has-value' : ''}">${player.rebounds_line} reb</div>` 
+            : '<div class="player-rebounds empty">-</div>';
+        
+        const playerId = player.player_id || '';
+        const statusBadge = player.status === 'STARTER' 
+            ? '<span class="status-badge starter">STARTER</span>' 
+            : '<span class="status-badge bench">BENCH</span>';
+        
+        return `
+            <div class="value-player-card ${player.valueClass}" data-player-id="${playerId}" data-player-name="${player.player_name}">
+                <div class="value-player-header">
+                    <div class="value-player-team-info">
+                        <span class="value-player-team">${player.teamName}</span>
+                        <span class="value-player-position">${player.position}</span>
+                    </div>
+                    <div class="value-player-game-info">
+                        <span class="value-player-opponent">vs ${player.opponent}</span>
+                        <span class="value-player-time">${formatTime(player.gameTime)}</span>
+                    </div>
+                </div>
+                <img src="${player.player_photo_url || getPlaceholderPlayer()}" 
+                     alt="${player.player_name}" 
+                     class="player-photo"
+                     onerror="this.src='${getPlaceholderPlayer()}'">
+                <div class="player-name">${player.player_name}</div>
+                ${pointsLine}
+                ${assistsLine}
+                ${reboundsLine}
+                ${statusBadge}
+                ${playerId ? `<button class="show-game-logs-btn" data-player-id="${playerId}" onclick="toggleGameLogs(${playerId}, this)">Ver Últimos Juegos</button>` : ''}
+            </div>
+        `;
+    }).join('');
+    
+    valuePlayersContainer.innerHTML = `
+        <div class="value-players-header">
+            <h2>Jugadores con Valor (${players.length})</h2>
+            <p class="value-players-subtitle">Jugadores ordenados por prioridad de valor de todos los juegos de hoy</p>
+        </div>
+        <div class="value-players-grid">
+            ${playersHTML}
+        </div>
+    `;
+}
 
 // Check schedule and load games on page load
 window.addEventListener('DOMContentLoaded', () => {

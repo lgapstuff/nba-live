@@ -30,6 +30,48 @@ header {
     text-align: center;
 }
 
+/* Navigation Tabs */
+.main-nav {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #eee;
+}
+
+.nav-tab {
+    padding: 12px 24px;
+    background: #f8f9fa;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    color: #666;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.nav-tab:hover {
+    background: #e9ecef;
+    color: #333;
+}
+
+.nav-tab.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+/* View Sections */
+.view-section {
+    display: block;
+}
+
+.view-section.hidden {
+    display: none;
+}
+
 header h1 {
     font-size: 2.5em;
     margin-bottom: 20px;
@@ -915,6 +957,13 @@ header h1 {
 .game-log-line-cell {
     color: #667eea;
     font-weight: 600;
+    text-align: center;
+}
+
+.historical-line-indicator {
+    font-size: 0.8em;
+    margin-left: 4px;
+    opacity: 0.7;
 }
 
 .game-log-assists-cell,
@@ -1924,5 +1973,193 @@ header h1 {
     border-radius: 8px;
     margin-bottom: 16px;
     flex-wrap: wrap;
+}
+
+/* Navigation Tabs */
+.main-nav {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #eee;
+}
+
+.nav-tab {
+    padding: 12px 24px;
+    background: #f8f9fa;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    color: #666;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.nav-tab:hover {
+    background: #e9ecef;
+    color: #333;
+}
+
+.nav-tab.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+}
+
+/* View Sections */
+.view-section {
+    display: block;
+}
+
+.view-section.hidden {
+    display: none;
+}
+
+/* Value Players View */
+.value-players-container {
+    width: 100%;
+}
+
+.value-players-header {
+    background: white;
+    padding: 25px;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.value-players-header h2 {
+    color: #667eea;
+    margin-bottom: 10px;
+    font-size: 2em;
+}
+
+.value-players-subtitle {
+    color: #666;
+    font-size: 1em;
+    margin: 0;
+}
+
+.value-players-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    width: 100%;
+}
+
+.value-player-card {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    transition: all 0.3s;
+    min-width: 0;
+    overflow: hidden;
+    word-wrap: break-word;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-sizing: border-box;
+    max-width: 100%;
+    min-height: 450px;
+    height: 450px;
+    gap: 8px;
+    position: relative;
+    border: 2px solid transparent;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.value-player-card:hover {
+    background: #e9ecef;
+    transform: translateY(-3px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* Apply value-based highlighting to value player cards */
+.value-player-card.value-medium {
+    border-color: #ffc107;
+    background: linear-gradient(135deg, #fff9e6 0%, #f8f9fa 100%);
+    box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+}
+
+.value-player-card.value-high {
+    border-color: #28a745;
+    background: linear-gradient(135deg, #e8f5e9 0%, #f8f9fa 100%);
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+}
+
+.value-player-card.value-very-high {
+    border-color: #17a2b8;
+    background: linear-gradient(135deg, #d1ecf1 0%, #f8f9fa 100%);
+    box-shadow: 0 4px 12px rgba(23, 162, 184, 0.4);
+}
+
+.value-player-card.value-highest {
+    border-color: #dc3545;
+    background: linear-gradient(135deg, #f8d7da 0%, #f8f9fa 100%);
+    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+    animation: bounce-subtle 2s ease-in-out infinite;
+}
+
+.value-player-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #ddd;
+}
+
+.value-player-team-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85em;
+}
+
+.value-player-team {
+    font-weight: 600;
+    color: #667eea;
+}
+
+.value-player-position {
+    font-weight: 600;
+    color: #666;
+    background: #e9ecef;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+}
+
+.value-player-game-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75em;
+    color: #999;
+}
+
+.value-player-opponent {
+    font-weight: 500;
+}
+
+.value-player-time {
+    font-weight: 600;
+}
+
+/* Responsive adjustments for value players grid */
+@media (max-width: 768px) {
+    .value-players-grid {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+    }
+    
+    .value-player-card {
+        min-height: 400px;
+        height: 400px;
+    }
 }
 

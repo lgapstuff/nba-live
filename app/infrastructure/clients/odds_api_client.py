@@ -43,23 +43,26 @@ class OddsAPIClient(OddsAPIPort):
                 'apiKey': self.api_key
             }
             
-            logger.info(f"Fetching events from The Odds API: {url}")
+            logger.info(f"[ODDS API] REQUEST: Fetching events for sport: {sport}")
+            logger.info(f"[ODDS API] REQUEST URL: {url}")
+            logger.debug(f"[ODDS API] REQUEST PARAMS: {params}")
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             
+            logger.info(f"[ODDS API] RESPONSE: Status {response.status_code}")
             events = response.json()
-            logger.info(f"Received {len(events)} events from The Odds API")
+            logger.info(f"[ODDS API] RESPONSE: Received {len(events)} events")
             
             return events
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching events from The Odds API: {e}")
+            logger.error(f"[ODDS API] REQUEST ERROR: Error fetching events: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
-                logger.error(f"Response body: {e.response.text}")
+                logger.error(f"[ODDS API] RESPONSE ERROR: Status {e.response.status_code}")
+                logger.error(f"[ODDS API] RESPONSE ERROR: Body {e.response.text[:500]}")
             return []
         except Exception as e:
-            logger.error(f"Unexpected error fetching events: {e}")
+            logger.error(f"[ODDS API] ERROR: Unexpected error fetching events: {e}")
             return []
     
     def get_player_points_odds(self, event_id: str, regions: str = "us", 
@@ -93,19 +96,21 @@ class OddsAPIClient(OddsAPIPort):
                 'oddsFormat': odds_format
             }
             
-            logger.info(f"Fetching player props odds from The Odds API for event {event_id}: {url}")
-            logger.debug(f"Request params: {params}")
+            logger.info(f"[ODDS API] REQUEST: Fetching player props odds for event {event_id}")
+            logger.info(f"[ODDS API] REQUEST URL: {url}")
+            logger.debug(f"[ODDS API] REQUEST PARAMS: {params}")
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             
+            logger.info(f"[ODDS API] RESPONSE: Status {response.status_code}")
             # Get event data with odds
             event_data = response.json()
             
             if not event_data:
-                logger.warning(f"Empty response for event {event_id}")
+                logger.warning(f"[ODDS API] RESPONSE: Empty response for event {event_id}")
                 return {}
             
-            logger.info(f"Received odds data for event {event_id}: {event_data.get('away_team')} @ {event_data.get('home_team')}")
+            logger.info(f"[ODDS API] RESPONSE: Received odds data for event {event_id}: {event_data.get('away_team')} @ {event_data.get('home_team')}")
             
             # Log the complete raw response from The Odds API
             logger.info(f"[ODDS API] Raw response for event {event_id}:")
@@ -164,19 +169,19 @@ class OddsAPIClient(OddsAPIPort):
             return result
             
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error fetching odds from The Odds API: {e}")
+            logger.error(f"[ODDS API] REQUEST ERROR: HTTP error fetching odds: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"[ODDS API] RESPONSE ERROR: Status {e.response.status_code}")
                 try:
                     error_body = e.response.json()
-                    logger.error(f"Response body: {error_body}")
+                    logger.error(f"[ODDS API] RESPONSE ERROR: Body {error_body}")
                 except:
-                    logger.error(f"Response body (text): {e.response.text[:500]}")
+                    logger.error(f"[ODDS API] RESPONSE ERROR: Body (text) {e.response.text[:500]}")
             return {}
         except requests.exceptions.RequestException as e:
-            logger.error(f"Request error fetching odds from The Odds API: {e}")
+            logger.error(f"[ODDS API] REQUEST ERROR: Request error fetching odds: {e}")
             return {}
         except Exception as e:
-            logger.error(f"Unexpected error fetching odds: {e}", exc_info=True)
+            logger.error(f"[ODDS API] ERROR: Unexpected error fetching odds: {e}", exc_info=True)
             return {}
 
