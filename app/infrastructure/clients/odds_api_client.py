@@ -4,7 +4,7 @@ The Odds API HTTP client.
 import json
 import requests
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from app.domain.ports.odds_api_port import OddsAPIPort
 
@@ -184,4 +184,49 @@ class OddsAPIClient(OddsAPIPort):
         except Exception as e:
             logger.error(f"[ODDS API] ERROR: Unexpected error fetching odds: {e}", exc_info=True)
             return {}
+    
+    def get_scores(self, sport: str = "basketball_nba", days_from: int = 1, 
+                  event_ids: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get scores for games.
+        
+        Args:
+            sport: Sport key (default: "basketball_nba")
+            days_from: Number of days in the past from which to return completed games (1-3)
+            event_ids: Comma-separated game ids to filter results (optional)
+            
+        Returns:
+            List of score dictionaries
+        """
+        try:
+            url = f"{self.base_url}/v4/sports/{sport}/scores"
+            params = {
+                'apiKey': self.api_key,
+                'daysFrom': days_from
+            }
+            
+            if event_ids:
+                params['eventIds'] = event_ids
+            
+            logger.info(f"[ODDS API] REQUEST: Fetching scores for sport: {sport}, daysFrom: {days_from}")
+            logger.info(f"[ODDS API] REQUEST URL: {url}")
+            logger.debug(f"[ODDS API] REQUEST PARAMS: {params}")
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            logger.info(f"[ODDS API] RESPONSE: Status {response.status_code}")
+            scores = response.json()
+            logger.info(f"[ODDS API] RESPONSE: Received {len(scores)} scores")
+            
+            return scores
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[ODDS API] REQUEST ERROR: Error fetching scores: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"[ODDS API] RESPONSE ERROR: Status {e.response.status_code}")
+                logger.error(f"[ODDS API] RESPONSE ERROR: Body {e.response.text[:500]}")
+            return []
+        except Exception as e:
+            logger.error(f"[ODDS API] ERROR: Unexpected error fetching scores: {e}")
+            return []
 

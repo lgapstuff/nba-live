@@ -218,4 +218,99 @@ class GameLogController:
                 "success": False,
                 "message": f"Internal server error: {str(e)}"
             }), 500
+    
+    def get_live_player_stats(self, game_id: str) -> Tuple[Dict[str, Any], int]:
+        """
+        Get live statistics for selected players in a game.
+        
+        Args:
+            game_id: Game identifier from our database
+            
+        Returns:
+            JSON response with live stats for selected players
+        """
+        try:
+            # Get player IDs from request body
+            data = request.get_json() or {}
+            player_ids = data.get('player_ids', [])
+            
+            if not player_ids:
+                return jsonify({
+                    "success": False,
+                    "message": "No player IDs provided"
+                }), 400
+            
+            # Get game info to find NBA GameID
+            from app.infrastructure.repositories.game_repository import GameRepository
+            from app.config.settings import Config
+            from app.infrastructure.database.connection import DatabaseConnection
+            
+            config = Config()
+            db = DatabaseConnection(config)
+            game_repo = GameRepository(db)
+            
+            game = game_repo.get_game_by_id(game_id)
+            if not game:
+                return jsonify({
+                    "success": False,
+                    "message": f"Game {game_id} not found"
+                }), 404
+            
+            home_team = game.get('home_team', '')
+            away_team = game.get('away_team', '')
+            game_date = game.get('game_date', '')
+            
+            logger.info(f"[LIVE STATS] Looking for NBA GameID: {away_team} @ {home_team} on {game_date}")
+            
+            # Find NBA GameID
+            nba_game_id = self.game_log_service.nba_api.find_nba_game_id(
+                home_team_abbr=home_team,
+                away_team_abbr=away_team,
+                game_date=game_date
+            )
+            
+            if not nba_game_id:
+                # Provide more helpful error message
+                error_msg = (
+                    f"Could not find NBA GameID for game {game_id} "
+                    f"({away_team} @ {home_team} on {game_date}). "
+                    f"The game may have already ended, not started yet, or the teams/date may not match."
+                )
+                logger.warning(f"[LIVE STATS] {error_msg}")
+                return jsonify({
+                    "success": False,
+                    "message": error_msg,
+                    "game_id": game_id,
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "game_date": game_date
+                }), 404
+            
+            # Get live boxscore
+            live_stats = self.game_log_service.nba_api.get_live_boxscore(
+                game_id=nba_game_id,
+                player_ids=player_ids
+            )
+            
+            if not live_stats:
+                return jsonify({
+                    "success": False,
+                    "message": f"No live stats available for game {game_id}",
+                    "nba_game_id": nba_game_id
+                }), 404
+            
+            return jsonify({
+                "success": True,
+                "game_id": game_id,
+                "nba_game_id": nba_game_id,
+                "player_stats": live_stats,
+                "players_found": len(live_stats)
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error in get_live_player_stats: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "message": f"Internal server error: {str(e)}"
+            }), 500
 

@@ -63,6 +63,47 @@ def create_tables(config: Config) -> None:
                     # Column already exists, ignore
                     pass
                 
+                # Add score columns if they don't exist (for storing game scores)
+                try:
+                    cursor.execute("""
+                        ALTER TABLE games 
+                        ADD COLUMN home_score INT NULL
+                    """)
+                    logger.info("Added home_score column to games")
+                except Exception:
+                    # Column already exists, ignore
+                    pass
+                
+                try:
+                    cursor.execute("""
+                        ALTER TABLE games 
+                        ADD COLUMN away_score INT NULL
+                    """)
+                    logger.info("Added away_score column to games")
+                except Exception:
+                    # Column already exists, ignore
+                    pass
+                
+                try:
+                    cursor.execute("""
+                        ALTER TABLE games 
+                        ADD COLUMN score_last_update DATETIME NULL
+                    """)
+                    logger.info("Added score_last_update column to games")
+                except Exception:
+                    # Column already exists, ignore
+                    pass
+                
+                try:
+                    cursor.execute("""
+                        ALTER TABLE games 
+                        ADD COLUMN game_completed TINYINT(1) DEFAULT 0
+                    """)
+                    logger.info("Added game_completed column to games")
+                except Exception:
+                    # Column already exists, ignore
+                    pass
+                
                 # Create game_lineups table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS game_lineups (

@@ -77,7 +77,8 @@ class GameRepository:
                     SELECT 
                         game_id, home_team, away_team, game_date, game_time,
                         status, season, season_type, home_team_name, away_team_name,
-                        home_team_logo_url, away_team_logo_url
+                        home_team_logo_url, away_team_logo_url,
+                        home_score, away_score, score_last_update, game_completed
                     FROM games
                     WHERE game_date = %s
                     ORDER BY game_time ASC
@@ -100,7 +101,8 @@ class GameRepository:
                     SELECT 
                         game_id, home_team, away_team, game_date, game_time,
                         status, season, season_type, home_team_name, away_team_name,
-                        home_team_logo_url, away_team_logo_url
+                        home_team_logo_url, away_team_logo_url,
+                        home_score, away_score, score_last_update, game_completed
                     FROM games
                     WHERE game_id = %s
                 """, (game_id,))
@@ -155,4 +157,73 @@ class GameRepository:
                 
                 conn.commit()
                 return saved_count
+    
+    def update_game_scores(self, game_id: str, home_score: Optional[int] = None, 
+                          away_score: Optional[int] = None, completed: bool = False,
+                          last_update: Optional[str] = None) -> None:
+        """
+        Update game scores and completion status.
+        
+        Args:
+            game_id: Game identifier
+            home_score: Home team score
+            away_score: Away team score
+            completed: Whether the game is completed
+            last_update: Last update timestamp
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                updates = []
+                params = []
+                
+                if home_score is not None:
+                    updates.append("home_score = %s")
+                    params.append(home_score)
+                
+                if away_score is not None:
+                    updates.append("away_score = %s")
+                    params.append(away_score)
+                
+                # Always update completed status
+                updates.append("game_completed = %s")
+                params.append(1 if completed else 0)
+                
+                if last_update:
+                    # Convert ISO 8601 format (with Z) to MySQL DATETIME format
+                    # MySQL doesn't accept 'Z' timezone indicator, so we need to convert it
+                    try:
+                        from datetime import datetime
+                        # Parse ISO 8601 format (e.g., '2026-01-14T04:25:21Z')
+                        if isinstance(last_update, str):
+                            # Handle ISO 8601 format with 'Z' (UTC)
+                            if last_update.endswith('Z'):
+                                # Remove 'Z' and replace 'T' with space for MySQL DATETIME format
+                                last_update_mysql = last_update[:-1].replace('T', ' ')
+                            elif 'T' in last_update:
+                                # Has 'T' but no 'Z', just replace 'T' with space
+                                last_update_mysql = last_update.replace('T', ' ')
+                            else:
+                                # Already in MySQL format or different format
+                                last_update_mysql = last_update
+                        else:
+                            last_update_mysql = last_update
+                    except Exception as e:
+                        logger.warning(f"Error parsing last_update datetime '{last_update}': {e}, using as-is")
+                        # Try simple string replacement as fallback
+                        if isinstance(last_update, str):
+                            last_update_mysql = last_update.replace('Z', '').replace('T', ' ')
+                        else:
+                            last_update_mysql = last_update
+                    
+                    updates.append("score_last_update = %s")
+                    params.append(last_update_mysql)
+                
+                if updates:
+                    params.append(game_id)
+                    cursor.execute(f"""
+                        UPDATE games
+                        SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+                        WHERE game_id = %s
+                    """, params)
+                    conn.commit()
 

@@ -434,6 +434,16 @@ window.loadGameLogsForGame = async function(gameId, buttonElement) {
             buttonElement.style.cursor = 'pointer';
         }
         
+        // Update Live Player Score button visibility
+        const liveStatsBtn = gameCard.querySelector('.load-live-stats-btn');
+        if (liveStatsBtn) {
+            if (finalCount > 0) {
+                liveStatsBtn.style.display = 'inline-block';
+            } else {
+                liveStatsBtn.style.display = 'none';
+            }
+        }
+        
         // Update count using the function (which will find the newly created span)
         // Use a small delay to ensure DOM is updated
         setTimeout(() => {
@@ -525,6 +535,49 @@ function updateSelectedCount(gameCard) {
         console.log(`[updateSelectedCount] Button disabled: ${loadButton.disabled}, checkedCount: ${checkedCount}`);
     } else {
         console.warn('[updateSelectedCount] Could not find .load-game-logs-btn element');
+    }
+    
+    // Check if game is completed
+    const gameId = gameCard.getAttribute('data-game-id');
+    const gameData = cachedGamesData?.find(g => g.game_id == gameId);
+    const isCompleted = gameData && (gameData.game_completed === 1 || gameData.game_completed === true);
+    
+    // Update Live Player Score button visibility
+    const liveStatsBtn = gameCard.querySelector('.load-live-stats-btn');
+    if (liveStatsBtn) {
+        // Hide button if game is completed or no players selected
+        if (checkedCount > 0 && !isCompleted) {
+            liveStatsBtn.style.display = 'inline-block';
+            liveStatsBtn.style.visibility = 'visible';
+            console.log(`[updateSelectedCount] Showing Live Player Score button (${checkedCount} selected, game not completed)`);
+        } else {
+            liveStatsBtn.style.display = 'none';
+            liveStatsBtn.style.visibility = 'hidden';
+            if (isCompleted) {
+                console.log(`[updateSelectedCount] Hiding Live Player Score button (game completed)`);
+            } else {
+                console.log(`[updateSelectedCount] Hiding Live Player Score button (0 selected)`);
+            }
+        }
+    } else {
+        console.warn('[updateSelectedCount] Could not find .load-live-stats-btn element in game card');
+        // Try to find it in the actions section
+        const actionsSection = gameCard.querySelector('.actions-section');
+        if (actionsSection) {
+            const btnInActions = actionsSection.querySelector('.load-live-stats-btn');
+            if (btnInActions) {
+                console.log('[updateSelectedCount] Found button in actions section');
+                if (checkedCount > 0 && !isCompleted) {
+                    btnInActions.style.display = 'inline-block';
+                    btnInActions.style.visibility = 'visible';
+                } else {
+                    btnInActions.style.display = 'none';
+                    btnInActions.style.visibility = 'hidden';
+                }
+            } else {
+                console.warn('[updateSelectedCount] Button not found in actions section either');
+            }
+        }
     }
 }
 
@@ -653,6 +706,302 @@ window.loadRosterForGame = async function(gameId, buttonElement) {
     } finally {
         // Restore button state
         btnText.textContent = originalText;
+        buttonElement.disabled = false;
+    }
+};
+
+// Load live player stats for selected players (must be in global scope for onclick)
+window.loadLivePlayerStats = async function(gameId, buttonElement) {
+    console.log('loadLivePlayerStats called with gameId:', gameId);
+    
+    if (!gameId) {
+        console.error('Error: No se proporcionó un ID de juego');
+        return;
+    }
+    
+    const gameCard = buttonElement.closest('.game-card');
+    if (!gameCard) {
+        console.error('Error: No se pudo encontrar la carta del juego');
+        return;
+    }
+    
+    // Get selected player IDs
+    const checkboxes = gameCard.querySelectorAll('.player-game-log-checkbox:checked');
+    const playerIds = [];
+    
+    checkboxes.forEach(checkbox => {
+        const playerId = parseInt(checkbox.getAttribute('data-player-id'));
+        if (playerId && !isNaN(playerId)) {
+            playerIds.push(playerId);
+        }
+    });
+    
+    if (playerIds.length === 0) {
+        console.warn('No hay jugadores seleccionados');
+        return;
+    }
+    
+    console.log(`Fetching live stats for ${playerIds.length} players:`, playerIds);
+    
+    // Show loading state on button
+    const originalText = buttonElement.textContent;
+    buttonElement.textContent = 'Cargando...';
+    buttonElement.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/nba/games/${gameId}/live-stats`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                player_ids: playerIds
+            })
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error response:', errorText);
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (e) {
+                errorData = { message: errorText || `HTTP ${response.status}` };
+            }
+            throw new Error(errorData.message || `Error ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('=== LIVE PLAYER STATS RESPONSE ===');
+        console.log(JSON.stringify(data, null, 2));
+        console.log('===================================');
+        
+        if (data.success && data.player_stats) {
+            console.log(`\nEstadísticas en vivo para ${data.players_found} jugadores:`);
+            Object.keys(data.player_stats).forEach(playerId => {
+                const stats = data.player_stats[playerId];
+                console.log(`\nJugador: ${stats.PLAYER_NAME || `ID: ${playerId}`}`);
+                console.log(`  Puntos: ${stats.PTS}`);
+                console.log(`  Asistencias: ${stats.AST}`);
+                console.log(`  Rebotes: ${stats.REB}`);
+                console.log(`  Minutos: ${stats.MIN}`);
+                console.log(`  Tiros de campo: ${stats.FGM}/${stats.FGA}`);
+                console.log(`  Tiros de 3: ${stats.FG3M}/${stats.FG3A}`);
+                console.log(`  Tiros libres: ${stats.FTM}/${stats.FTA}`);
+                console.log(`  Robos: ${stats.STL}`);
+                console.log(`  Bloqueos: ${stats.BLK}`);
+                console.log(`  Pérdidas: ${stats.TOV}`);
+                console.log(`  Faltas: ${stats.PF}`);
+            });
+        } else {
+            console.warn('No se encontraron estadísticas en vivo');
+        }
+        
+    } catch (error) {
+        console.error('Error loading live player stats:', error);
+    } finally {
+        // Restore button state
+        buttonElement.textContent = originalText;
+        buttonElement.disabled = false;
+    }
+};
+
+// Load scores for a specific game (must be in global scope for onclick)
+window.loadScoresForGame = async function(gameId, buttonElement) {
+    console.log('loadScoresForGame called with gameId:', gameId);
+    
+    if (!gameId) {
+        showError('Error: No se proporcionó un ID de juego');
+        return;
+    }
+    
+    const gameCard = buttonElement.closest('.game-card');
+    if (!gameCard) {
+        showError('Error: No se pudo encontrar la carta del juego');
+        return;
+    }
+    
+    // Show loading overlay on the specific game card
+    showGameCardLoading(gameCard);
+    
+    // Show loading state on button
+    const originalText = buttonElement.textContent;
+    buttonElement.textContent = 'Cargando...';
+    buttonElement.disabled = true;
+    
+    try {
+        console.log(`Fetching scores for game ${gameId} from ${API_BASE_URL}/nba/games/${gameId}/scores`);
+        
+        const response = await fetch(`${API_BASE_URL}/nba/games/${gameId}/scores`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error response:', errorText);
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (e) {
+                errorData = { message: errorText || `HTTP ${response.status}` };
+            }
+            throw new Error(errorData.message || `Error ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Scores data received:', data);
+        
+        if (data.success) {
+            console.log('Scores loaded successfully, updating game card...');
+            
+            // Get updated game data - try lineups endpoint first, then games endpoint
+            let gameData = null;
+            const lineupResponse = await fetch(`${API_BASE_URL}/nba/games/${gameId}/lineups`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (lineupResponse.ok) {
+                const lineupData = await lineupResponse.json();
+                if (lineupData.success && lineupData.lineup) {
+                    gameData = lineupData.lineup;
+                }
+            }
+            
+            // If no lineup data, try games endpoint
+            if (!gameData) {
+                const today = getTodayInLATimezone();
+                const gamesResponse = await fetch(`${API_BASE_URL}/nba/games?date=${today}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (gamesResponse.ok) {
+                    const gamesData = await gamesResponse.json();
+                    if (gamesData.success && gamesData.games) {
+                        gameData = gamesData.games.find(g => g.game_id === gameId);
+                    }
+                }
+            }
+            
+            if (gameData) {
+                // Recreate the game card with updated scores
+                const hasLineups = gameData.lineups && Object.keys(gameData.lineups).length > 0;
+                const newCard = createGameCard(gameData, hasLineups);
+                gameCard.replaceWith(newCard);
+                
+                // Re-attach event listeners
+                const loadOddsButton = newCard.querySelector('.load-odds-btn');
+                if (loadOddsButton) {
+                    loadOddsButton.addEventListener('click', function() {
+                        const gameId = this.getAttribute('data-game-id');
+                        loadOddsForGame(gameId, this);
+                    });
+                }
+                
+                const loadScoresButton = newCard.querySelector('.load-scores-btn');
+                if (loadScoresButton) {
+                    loadScoresButton.addEventListener('click', function() {
+                        const gameId = this.getAttribute('data-game-id');
+                        loadScoresForGame(gameId, this);
+                    });
+                }
+                
+                // Re-attach checkbox listeners and update selected count
+                if (hasLineups) {
+                    const checkboxes = newCard.querySelectorAll('.player-game-log-checkbox');
+                    checkboxes.forEach(checkbox => {
+                        checkbox.addEventListener('change', function() {
+                            updateSelectedCount(newCard);
+                        });
+                        checkbox.addEventListener('click', function() {
+                            setTimeout(() => {
+                                updateSelectedCount(newCard);
+                            }, 10);
+                        });
+                    });
+                    updateSelectedCount(newCard);
+                }
+                
+                // Update cached games data
+                if (cachedGamesData) {
+                    const gameIndex = cachedGamesData.findIndex(g => g.game_id === gameId);
+                    if (gameIndex !== -1) {
+                        cachedGamesData[gameIndex] = gameData;
+                    }
+                }
+                
+                // Re-attach other listeners if needed
+                if (hasLineups) {
+                    const selectAllButtons = newCard.querySelectorAll('.select-all-players-btn');
+                    selectAllButtons.forEach(button => {
+                        button.addEventListener('click', function() {
+                            const gameId = this.getAttribute('data-game-id');
+                            toggleSelectAllPlayers(gameId, this);
+                        });
+                    });
+                    
+                    // Re-attach team toggle buttons
+                    const teamToggleButtons = newCard.querySelectorAll('.team-toggle-btn');
+                    teamToggleButtons.forEach(button => {
+                        // Event listener is already attached via onclick in HTML
+                    });
+                    
+                    const loadGameLogsButtons = newCard.querySelectorAll('.load-game-logs-btn');
+                    loadGameLogsButtons.forEach(button => {
+                        button.addEventListener('click', function() {
+                            const gameId = this.getAttribute('data-game-id');
+                            loadGameLogsForGame(gameId, this);
+                        });
+                    });
+                    
+                    // Live stats buttons
+                    const loadLiveStatsButtons = newCard.querySelectorAll('.load-live-stats-btn');
+                    loadLiveStatsButtons.forEach(button => {
+                        button.addEventListener('click', function() {
+                            const gameId = this.getAttribute('data-game-id');
+                            loadLivePlayerStats(gameId, this);
+                        });
+                    });
+                } else {
+                    const loadRosterButtons = newCard.querySelectorAll('.load-roster-btn');
+                    loadRosterButtons.forEach(button => {
+                        button.addEventListener('click', function() {
+                            const gameId = this.getAttribute('data-game-id');
+                            loadRosterForGame(gameId, this);
+                        });
+                    });
+                }
+            }
+            
+            showSuccess('Scores cargados exitosamente');
+        } else {
+            throw new Error(data.message || 'Error al cargar scores');
+        }
+        
+    } catch (error) {
+        console.error('Error loading scores for game:', error);
+        showError(`Error al cargar scores: ${error.message || error}`);
+    } finally {
+        // Hide loading overlay
+        hideGameCardLoading(gameCard);
+        // Restore button state
+        buttonElement.textContent = originalText;
         buttonElement.disabled = false;
     }
 };
@@ -816,6 +1165,38 @@ async function updateGameCardWithLineups(gameId, gameCard) {
                     loadOddsForGame(gameId, this);
                 });
             }
+            
+            const loadScoresButton = newCard.querySelector('.load-scores-btn');
+            if (loadScoresButton) {
+                loadScoresButton.addEventListener('click', function() {
+                    const gameId = this.getAttribute('data-game-id');
+                    loadScoresForGame(gameId, this);
+                });
+            }
+            
+            // Re-attach checkbox listeners and update selected count
+            const checkboxes = newCard.querySelectorAll('.player-game-log-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    updateSelectedCount(newCard);
+                });
+                checkbox.addEventListener('click', function() {
+                    setTimeout(() => {
+                        updateSelectedCount(newCard);
+                    }, 10);
+                });
+            });
+            
+            // Live stats buttons
+            const loadLiveStatsButtons = newCard.querySelectorAll('.load-live-stats-btn');
+            loadLiveStatsButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const gameId = this.getAttribute('data-game-id');
+                    loadLivePlayerStats(gameId, this);
+                });
+            });
+            
+            updateSelectedCount(newCard);
             
             // Return the gameData so it can be used by the caller
             return gameData;
@@ -1007,6 +1388,24 @@ function displayGames(games, hasLineups = false) {
                 loadOddsForGame(gameId, this);
             });
         });
+        
+        // Scores buttons
+        const loadScoresButtons = gamesContainer.querySelectorAll('.load-scores-btn');
+        loadScoresButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const gameId = this.getAttribute('data-game-id');
+                loadScoresForGame(gameId, this);
+            });
+        });
+        
+        // Live stats buttons
+        const loadLiveStatsButtons = gamesContainer.querySelectorAll('.load-live-stats-btn');
+        loadLiveStatsButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const gameId = this.getAttribute('data-game-id');
+                loadLivePlayerStats(gameId, this);
+            });
+        });
     } else {
         // Roster buttons (only shown when lineups are not loaded)
         const loadRosterButtons = gamesContainer.querySelectorAll('.load-roster-btn');
@@ -1014,6 +1413,15 @@ function displayGames(games, hasLineups = false) {
             button.addEventListener('click', function() {
                 const gameId = this.getAttribute('data-game-id');
                 loadRosterForGame(gameId, this);
+            });
+        });
+        
+        // Scores buttons (available even without lineups)
+        const loadScoresButtons = gamesContainer.querySelectorAll('.load-scores-btn');
+        loadScoresButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const gameId = this.getAttribute('data-game-id');
+                loadScoresForGame(gameId, this);
             });
         });
     }
@@ -1029,20 +1437,35 @@ function createGameCard(game, hasLineups = false) {
     const gameTime = game.game_time || 'N/A';
     const lineups = game.lineups || {};
     
+    // Check if scores are available
+    const hasScores = (game.home_score !== null && game.home_score !== undefined) || 
+                      (game.away_score !== null && game.away_score !== undefined);
+    const awayScore = game.away_score !== null && game.away_score !== undefined ? game.away_score : '';
+    const homeScore = game.home_score !== null && game.home_score !== undefined ? game.home_score : '';
+    const scoreDisplay = hasScores ? `${awayScore} - ${homeScore}` : 'VS';
+    
+    // Check game status
+    const isCompleted = game.game_completed === 1 || game.game_completed === true;
+    const gameStatus = hasScores ? (isCompleted ? 'TERMINADO' : 'LIVE') : '';
+    const statusClass = isCompleted ? 'game-status-completed' : 'game-status-live';
+    
     card.innerHTML = `
         <div class="game-header">
             <div class="game-info">
-                <div class="game-date-time">${formatDate(gameDate)} - ${formatTime(gameTime, gameDate)}</div>
+                <div class="game-date-time">
+                    ${formatDate(gameDate)} - ${formatTime(gameTime, gameDate)}
+                    ${gameStatus ? `<span class="game-status ${statusClass}">${gameStatus}</span>` : ''}
+                </div>
                 <div class="teams">
-                    <div class="team">
+                    <div class="team team-away">
+                        <span class="team-name">${game.away_team_name || game.away_team}</span>
                         <img src="${game.away_team_logo_url || getPlaceholderLogo()}" 
                              alt="${game.away_team_name || game.away_team}" 
                              class="team-logo"
                              onerror="this.src='${getPlaceholderLogo()}'">
-                        <span class="team-name">${game.away_team_name || game.away_team}</span>
                     </div>
-                    <span class="vs">VS</span>
-                    <div class="team">
+                    <span class="vs">${scoreDisplay}</span>
+                    <div class="team team-home">
                         <img src="${game.home_team_logo_url || getPlaceholderLogo()}" 
                              alt="${game.home_team_name || game.home_team}" 
                              class="team-logo"
@@ -1056,7 +1479,8 @@ function createGameCard(game, hasLineups = false) {
         
         <div class="actions-section">
             ${!hasLineups ? '<button class="action-btn load-roster-btn" data-game-id="' + game.game_id + '"><span class="btn-text">Cargar Roster</span></button>' : ''}
-            ${hasLineups ? '<div class="game-logs-controls"><button class="action-btn select-all-players-btn" data-game-id="' + game.game_id + '"><span class="btn-text">Seleccionar Todos</span></button><button class="action-btn load-game-logs-btn" data-game-id="' + game.game_id + '"><span class="btn-text">Cargar Game Logs (<span class="selected-count">0</span>)</span></button></div><button class="action-btn load-odds-btn" data-game-id="' + game.game_id + '">Cargar Odds</button>' : ''}
+            ${hasLineups ? '<div class="game-logs-controls"><button class="action-btn select-all-players-btn" data-game-id="' + game.game_id + '"><span class="btn-text">Seleccionar Todos</span></button><button class="action-btn load-game-logs-btn" data-game-id="' + game.game_id + '"><span class="btn-text">Cargar Game Logs (<span class="selected-count">0</span>)</span></button>' + (!isCompleted ? '<button class="action-btn load-live-stats-btn" data-game-id="' + game.game_id + '" style="display: none;"><span class="btn-text">Live Player Score</span></button>' : '') + '</div><button class="action-btn load-odds-btn" data-game-id="' + game.game_id + '">Cargar Odds</button><button class="action-btn load-scores-btn" data-game-id="' + game.game_id + '">Cargar Scores</button>' : ''}
+            ${!hasLineups ? '<button class="action-btn load-scores-btn" data-game-id="' + game.game_id + '">Cargar Scores</button>' : ''}
         </div>
         ${hasLineups ? `
         <div class="lineups-section collapsed">
@@ -1230,16 +1654,21 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
     const showTeamHeader = lineups && lineups[teamAbbr];
     
     return `
-        <div class="team-lineup">
+        <div class="team-lineup" data-team-abbr="${teamAbbr}">
             ${showTeamHeader ? `
             <div class="team-lineup-header">
                 <span class="team-name-text">${teamName || teamAbbr}</span>
+                <button class="team-toggle-btn" data-team-abbr="${teamAbbr}" onclick="toggleTeamLineup(this)" title="Expandir/Retraer equipo">
+                    <span class="team-toggle-icon">▼</span>
+                </button>
             </div>
             ` : ''}
-            <div class="positions-grid">
-                ${startersHTML}
+            <div class="team-lineup-content">
+                <div class="positions-grid">
+                    ${startersHTML}
+                </div>
+                ${benchHTML ? `<div class="bench-players"><div class="bench-players-grid">${benchHTML}</div></div>` : ''}
             </div>
-            ${benchHTML ? `<div class="bench-players"><div class="bench-players-grid">${benchHTML}</div></div>` : ''}
         </div>
     `;
 }
@@ -2939,6 +3368,27 @@ function expandGameCard(gameCard) {
         expandIcon.textContent = '▲';
     }
 }
+
+// Toggle team lineup expand/collapse
+window.toggleTeamLineup = function(buttonElement) {
+    const teamLineup = buttonElement.closest('.team-lineup');
+    if (!teamLineup) return;
+    
+    const teamContent = teamLineup.querySelector('.team-lineup-content');
+    const toggleIcon = buttonElement.querySelector('.team-toggle-icon');
+    
+    if (!teamContent) return;
+    
+    // Toggle collapsed class
+    const isCollapsed = teamContent.classList.contains('collapsed');
+    if (isCollapsed) {
+        teamContent.classList.remove('collapsed');
+        if (toggleIcon) toggleIcon.textContent = '▼';
+    } else {
+        teamContent.classList.add('collapsed');
+        if (toggleIcon) toggleIcon.textContent = '▶';
+    }
+};
 
 // Toggle game card expand/collapse
 window.toggleGameCard = function(buttonElement) {

@@ -171,6 +171,20 @@ def get_game_odds(game_id: str):
     return odds_controller.get_player_points_odds(game_id)
 
 
+@nba_bp.route("/games/<game_id>/scores", methods=["GET"])
+def get_game_scores(game_id: str):
+    """
+    Get scores for a specific game from The Odds API.
+    
+    Path parameters:
+        game_id: Game identifier
+    
+    Returns:
+        JSON with game scores
+    """
+    return odds_controller.get_game_scores(game_id)
+
+
 @nba_bp.route("/odds/import", methods=["POST"])
 def import_odds():
     """
@@ -306,6 +320,47 @@ def get_player_game_logs(player_id: int):
     
     player_name = request.args.get('player_name')
     return game_log_controller.get_player_game_logs(player_id, player_name)
+
+
+@nba_bp.route("/games/<game_id>/live-stats", methods=["POST"])
+def get_live_player_stats(game_id: str):
+    """
+    Get live statistics for selected players in a game.
+    
+    Path parameters:
+        game_id: Game identifier
+    
+    Request body:
+        JSON with player_ids array:
+        {
+            "player_ids": [123456, 789012, ...]
+        }
+    
+    Returns:
+        JSON with live statistics for each player:
+        {
+            "success": true,
+            "game_id": "...",
+            "nba_game_id": "0022400123",
+            "player_stats": {
+                "123456": {
+                    "PTS": 15,
+                    "AST": 5,
+                    "REB": 8,
+                    "MIN": "25:30",
+                    ...
+                },
+                ...
+            }
+        }
+    """
+    if not game_log_controller:
+        return jsonify({
+            "success": False,
+            "message": "Game log service not available. NBA API client not initialized."
+        }), 503
+    
+    return game_log_controller.get_live_player_stats(game_id)
 
 
 @nba_bp.route("/players/<int:player_id>/odds-history", methods=["GET"])

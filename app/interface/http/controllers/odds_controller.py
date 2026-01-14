@@ -70,4 +70,26 @@ class OddsController:
                 "success": False,
                 "message": f"Internal server error: {str(e)}"
             }), 500
+    
+    def get_game_scores(self, game_id: str) -> Tuple[Dict[str, Any], int]:
+        """
+        Get scores for a specific game.
+        
+        Args:
+            game_id: Game identifier
+            
+        Returns:
+            JSON response and status code
+        """
+        try:
+            result = self.odds_service.get_game_scores(game_id)
+            status_code = 200 if result.get('success', False) else 400
+            return jsonify(result), status_code
+            
+        except Exception as e:
+            logger.error(f"Error in get_game_scores: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "message": f"Internal server error: {str(e)}"
+            }), 500
 

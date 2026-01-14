@@ -375,4 +375,230 @@ class NBAClient(NBAPort):
         except Exception as e:
             logger.error(f"[NBA API] REQUEST ERROR: Error fetching team players for {team_abbr}: {e}")
             return []
+    
+    def get_live_boxscore(self, game_id: str, player_ids: List[int]) -> Dict[str, Any]:
+        """
+        Get live boxscore statistics for specific players in a game.
+        
+        Args:
+            game_id: NBA GameID (format: "0022400123" where 00224 is season, 00123 is game number)
+            player_ids: List of NBA player IDs to get statistics for
+            
+        Returns:
+            Dictionary with live statistics for each player
+        """
+        try:
+            from nba_api.stats.endpoints import boxscoretraditionalv2
+            from nba_api.stats.library.parameters import GameID
+            
+            logger.info(f"[NBA API] REQUEST: Fetching live boxscore for game {game_id}, players: {player_ids}")
+            
+            # Get boxscore
+            boxscore = boxscoretraditionalv2.BoxScoreTraditionalV2(game_id=game_id)
+            data_frames = boxscore.get_data_frames()
+            
+            if not data_frames or len(data_frames) == 0:
+                logger.warning(f"[NBA API] RESPONSE: No boxscore data for game {game_id}")
+                return {}
+            
+            # First data frame contains player stats
+            df = data_frames[0]
+            
+            if df.empty:
+                logger.warning(f"[NBA API] RESPONSE: Empty boxscore for game {game_id}")
+                return {}
+            
+            # Convert to list of dictionaries
+            player_stats = df.to_dict('records')
+            
+            # Filter to only requested players and format response
+            result = {}
+            for stat in player_stats:
+                player_id = stat.get('PLAYER_ID')
+                if player_id and player_id in player_ids:
+                    result[player_id] = {
+                        'PTS': stat.get('PTS', 0),
+                        'AST': stat.get('AST', 0),
+                        'REB': stat.get('REB', 0),
+                        'MIN': stat.get('MIN', '0:00'),
+                        'FGM': stat.get('FGM', 0),
+                        'FGA': stat.get('FGA', 0),
+                        'FG3M': stat.get('FG3M', 0),
+                        'FG3A': stat.get('FG3A', 0),
+                        'FTM': stat.get('FTM', 0),
+                        'FTA': stat.get('FTA', 0),
+                        'TOV': stat.get('TOV', 0),
+                        'STL': stat.get('STL', 0),
+                        'BLK': stat.get('BLK', 0),
+                        'PF': stat.get('PF', 0),
+                        'PLAYER_NAME': stat.get('PLAYER_NAME', '')
+                    }
+            
+            logger.info(f"[NBA API] RESPONSE: Retrieved live stats for {len(result)} players")
+            return result
+            
+        except Exception as e:
+            logger.error(f"[NBA API] REQUEST ERROR: Error fetching live boxscore for game {game_id}: {e}")
+            return {}
+    
+    def find_nba_game_id(self, home_team_abbr: str, away_team_abbr: str, game_date: str = None) -> Optional[str]:
+        """
+        Find NBA GameID by matching teams and date using Scoreboard.
+        
+        Args:
+            home_team_abbr: Home team abbreviation (e.g., "LAL")
+            away_team_abbr: Away team abbreviation (e.g., "BOS")
+            game_date: Game date in format "YYYY-MM-DD" (optional, defaults to today)
+            
+        Returns:
+            NBA GameID (format: "0022400123") or None if not found
+        """
+        try:
+            from nba_api.stats.endpoints import scoreboardv2
+            from datetime import datetime, timedelta, date
+            
+            # If no date provided, use today
+            if not game_date:
+                game_date = datetime.now().strftime("%Y-%m-%d")
+            
+            # Convert game_date to string if it's a date/datetime object
+            if isinstance(game_date, (date, datetime)):
+                game_date = game_date.strftime("%Y-%m-%d")
+            elif not isinstance(game_date, str):
+                game_date = str(game_date)
+            
+            logger.info(f"[NBA API] REQUEST: Finding GameID for {away_team_abbr} @ {home_team_abbr} on {game_date}")
+            
+            # ScoreboardV2 expects format "YYYY-MM-DD"
+            # Ensure game_date is in correct format
+            try:
+                # Parse the date to ensure it's in YYYY-MM-DD format
+                if isinstance(game_date, str):
+                    game_date_obj = datetime.strptime(game_date, "%Y-%m-%d")
+                else:
+                    game_date_obj = datetime.strptime(str(game_date), "%Y-%m-%d")
+            except ValueError:
+                # If parsing fails, try to extract date from string
+                logger.warning(f"[NBA API] Could not parse game_date '{game_date}', using as-is")
+                game_date_obj = None
+            
+            # Try current date and also check yesterday and tomorrow (games might span dates)
+            dates_to_try = []
+            
+            if game_date_obj:
+                # Format dates as YYYY-MM-DD for ScoreboardV2
+                dates_to_try.append(game_date_obj.strftime("%Y-%m-%d"))
+                yesterday = (game_date_obj - timedelta(days=1)).strftime("%Y-%m-%d")
+                tomorrow = (game_date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
+                dates_to_try.extend([yesterday, tomorrow])
+            else:
+                # Fallback: use game_date as-is if it's already a string
+                dates_to_try.append(str(game_date))
+            
+            logger.debug(f"[NBA API] Will try dates: {dates_to_try}")
+            
+            for try_date in dates_to_try:
+                try:
+                    logger.debug(f"[NBA API] Trying scoreboard date: {try_date}")
+                    # ScoreboardV2 expects game_date in format "YYYY-MM-DD"
+                    scoreboard_data = scoreboardv2.ScoreboardV2(game_date=try_date)
+                    
+                    # Try get_dict() first (more reliable)
+                    try:
+                        scoreboard_dict = scoreboard_data.get_dict()
+                        if scoreboard_dict and 'resultSets' in scoreboard_dict:
+                            # resultSets[0] is GameHeader
+                            result_sets = scoreboard_dict.get('resultSets', [])
+                            if result_sets and len(result_sets) > 0:
+                                game_header = result_sets[0]
+                                if 'rowSet' in game_header:
+                                    games = []
+                                    headers = game_header.get('headers', [])
+                                    rows = game_header.get('rowSet', [])
+                                    
+                                    # Convert rows to dictionaries
+                                    for row in rows:
+                                        game_dict = {}
+                                        for i, header in enumerate(headers):
+                                            if i < len(row):
+                                                game_dict[header] = row[i]
+                                        games.append(game_dict)
+                                    
+                                    if games:
+                                        logger.debug(f"[NBA API] Found {len(games)} games in scoreboard (via get_dict) for {try_date}")
+                                        
+                                        # Search for matching game
+                                        for game in games:
+                                            home_team = game.get('HOME_TEAM_ABBREVIATION', '')
+                                            away_team = game.get('VISITOR_TEAM_ABBREVIATION', '')
+                                            game_id = game.get('GAME_ID', '')
+                                            
+                                            logger.debug(f"[NBA API] Checking game: {away_team} @ {home_team} (GameID: {game_id})")
+                                            
+                                            if (home_team.upper() == home_team_abbr.upper() and 
+                                                away_team.upper() == away_team_abbr.upper()):
+                                                logger.info(f"[NBA API] Found GameID: {game_id} for {away_team_abbr} @ {home_team_abbr} on {try_date}")
+                                                return game_id
+                    except Exception as dict_error:
+                        logger.debug(f"[NBA API] get_dict() failed for {try_date}: {dict_error}, trying get_data_frames()")
+                    
+                    # Fallback to get_data_frames()
+                    data_frames = scoreboard_data.get_data_frames()
+                    
+                    if not data_frames or len(data_frames) == 0:
+                        logger.debug(f"[NBA API] No data frames returned for scoreboard date {try_date}")
+                        continue
+                    
+                    # ScoreboardV2 returns multiple data frames:
+                    # [0] = GameHeader (contains game info)
+                    # [1] = LineScore
+                    # [2] = SeriesStandings
+                    # etc.
+                    # We need the GameHeader which is the first data frame
+                    if len(data_frames) < 1:
+                        logger.debug(f"[NBA API] Not enough data frames in scoreboard for {try_date}")
+                        continue
+                    
+                    # First data frame contains game header info
+                    df = data_frames[0]
+                    
+                    if df is None or (hasattr(df, 'empty') and df.empty):
+                        logger.debug(f"[NBA API] Empty game header data frame for {try_date}")
+                        continue
+                    
+                    # Convert to list of dictionaries
+                    games = df.to_dict('records')
+                    
+                    if not games:
+                        logger.debug(f"[NBA API] No games in scoreboard for {try_date}")
+                        continue
+                    
+                    logger.debug(f"[NBA API] Found {len(games)} games in scoreboard (via get_data_frames) for {try_date}")
+                    
+                    # Search for matching game
+                    for game in games:
+                        home_team = game.get('HOME_TEAM_ABBREVIATION', '')
+                        away_team = game.get('VISITOR_TEAM_ABBREVIATION', '')
+                        game_id = game.get('GAME_ID', '')
+                        
+                        logger.debug(f"[NBA API] Checking game: {away_team} @ {home_team} (GameID: {game_id})")
+                        
+                        if (home_team.upper() == home_team_abbr.upper() and 
+                            away_team.upper() == away_team_abbr.upper()):
+                            logger.info(f"[NBA API] Found GameID: {game_id} for {away_team_abbr} @ {home_team_abbr} on {try_date}")
+                            return game_id
+                    
+                except IndexError as e:
+                    logger.warning(f"[NBA API] IndexError fetching scoreboard for {try_date}: {e}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"[NBA API] Error fetching scoreboard for {try_date}: {e}", exc_info=True)
+                    continue
+            
+            logger.warning(f"[NBA API] GameID not found for {away_team_abbr} @ {home_team_abbr} on {game_date} (tried dates: {dates_to_try})")
+            return None
+            
+        except Exception as e:
+            logger.error(f"[NBA API] REQUEST ERROR: Error finding GameID: {e}", exc_info=True)
+            return None
 

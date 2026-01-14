@@ -444,7 +444,56 @@ header h1 {
 .vs {
     font-weight: bold;
     color: #667eea;
-    font-size: 1.2em;
+    font-size: 2.5em;
+    min-width: 120px;
+    text-align: center;
+    font-weight: 900;
+}
+
+.team-score {
+    font-size: 2.5em;
+    font-weight: 900;
+    color: #2d3748;
+    margin: 0 15px;
+}
+
+.team-away {
+    justify-content: flex-start;
+}
+
+.team-home {
+    justify-content: flex-end;
+}
+
+.game-status {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.75em;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-left: 10px;
+    letter-spacing: 0.5px;
+}
+
+.game-status-completed {
+    background-color: #48bb78;
+    color: white;
+}
+
+.game-status-live {
+    background-color: #f56565;
+    color: white;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 
 .lineups-section {
@@ -501,8 +550,8 @@ header h1 {
 
 .team-lineup-header {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
     gap: 10px;
     margin-bottom: 15px;
     padding-bottom: 10px;
@@ -513,6 +562,41 @@ header h1 {
     font-size: 1.1em;
     font-weight: 600;
     color: #333;
+    flex: 1;
+}
+
+.team-toggle-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 5px;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.team-toggle-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.team-toggle-icon {
+    font-size: 0.9em;
+    color: #667eea;
+    transition: transform 0.2s;
+}
+
+.team-lineup-content {
+    transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+    overflow: hidden;
+}
+
+.team-lineup-content.collapsed {
+    max-height: 0;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
 }
 
 .positions-grid {

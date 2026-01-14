@@ -2,7 +2,7 @@
 The Odds API port interface (contract).
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 class OddsAPIPort(ABC):
@@ -40,6 +40,22 @@ class OddsAPIPort(ABC):
             
         Returns:
             Dictionary with odds information including bookmakers and player prop markets
+        """
+        pass
+    
+    @abstractmethod
+    def get_scores(self, sport: str = "basketball_nba", days_from: int = 1, 
+                  event_ids: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get scores for games.
+        
+        Args:
+            sport: Sport key (default: "basketball_nba")
+            days_from: Number of days in the past from which to return completed games (1-3)
+            event_ids: Comma-separated game ids to filter results (optional)
+            
+        Returns:
+            List of score dictionaries
         """
         pass
 

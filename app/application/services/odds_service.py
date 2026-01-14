@@ -258,6 +258,153 @@ class OddsService:
                 "message": f"Failed to get odds: {e}"
             }
     
+    def get_game_scores(self, game_id: str) -> Dict[str, Any]:
+        """
+        Get scores for a specific game from The Odds API.
+        
+        Args:
+            game_id: Game identifier from our database
+            
+        Returns:
+            Dictionary with score information
+        """
+        try:
+            # Get game info to find The Odds API event
+            game = self.game_repository.get_game_by_id(game_id)
+            if not game:
+                logger.error(f"Game {game_id} not found in database")
+                return {
+                    "success": False,
+                    "message": f"Game {game_id} not found"
+                }
+            
+            # Find The Odds API event ID by matching teams and date
+            event_id = self._find_odds_api_event_id(game)
+            
+            # If event_id not found in events, try to find it in scores (for completed games)
+            if not event_id:
+                logger.info(f"Event ID not found in events list, trying to find in scores for completed games...")
+                # Try to get scores without event_id filter to find the game
+                try:
+                    scores_all = self.odds_api.get_scores(sport="basketball_nba", days_from=3)
+                    if scores_all:
+                        # Try to find matching event in scores by team names
+                        home_team_name = game.get('home_team_name', '').strip()
+                        away_team_name = game.get('away_team_name', '').strip()
+                        
+                        for score_data in scores_all:
+                            score_home = score_data.get('home_team', '').strip()
+                            score_away = score_data.get('away_team', '').strip()
+                            
+                            # Check if teams match (normal or swapped)
+                            home_match = self._calculate_team_match_score(home_team_name, score_home)
+                            away_match = self._calculate_team_match_score(away_team_name, score_away)
+                            normal_score = (home_match + away_match) / 2
+                            
+                            home_match_swapped = self._calculate_team_match_score(home_team_name, score_away)
+                            away_match_swapped = self._calculate_team_match_score(away_team_name, score_home)
+                            swapped_score = (home_match_swapped + away_match_swapped) / 2
+                            
+                            match_score = max(normal_score, swapped_score)
+                            
+                            if match_score >= 0.6:
+                                event_id = score_data.get('id')
+                                logger.info(f"Found matching event in scores: {event_id} with score {match_score:.2f}")
+                                break
+                except Exception as e:
+                    logger.warning(f"Error searching for event in scores: {e}")
+            
+            if not event_id:
+                logger.warning(f"Could not find matching event for game {game_id}")
+                return {
+                    "success": False,
+                    "message": f"Could not find matching event in The Odds API for {game.get('away_team_name', 'Away')} @ {game.get('home_team_name', 'Home')}"
+                }
+            
+            # Get scores from The Odds API
+            # Use days_from=3 to include completed games from the past 3 days
+            try:
+                scores = self.odds_api.get_scores(sport="basketball_nba", days_from=3, event_ids=event_id)
+                if scores:
+                    # Find the score for this specific event
+                    score_data = next((s for s in scores if s.get('id') == event_id), None)
+                    if score_data:
+                        # Extract score information
+                        home_score = None
+                        away_score = None
+                        completed = score_data.get('completed', False)
+                        last_update = score_data.get('last_update')
+                        
+                        # Extract scores from the scores array
+                        # Scores come as strings in the API response
+                        scores_list = score_data.get('scores', [])
+                        if scores_list:
+                            # Match by team names (home_team and away_team from score_data)
+                            home_team_name = score_data.get('home_team', '')
+                            away_team_name = score_data.get('away_team', '')
+                            
+                            for score_entry in scores_list:
+                                team_name = score_entry.get('name', '')
+                                score_str = score_entry.get('score', '')
+                                
+                                # Try to convert score to int, handle empty strings
+                                try:
+                                    score_value = int(score_str) if score_str else None
+                                except (ValueError, TypeError):
+                                    score_value = None
+                                
+                                if score_value is not None:
+                                    # Match by team name from score_data
+                                    if team_name == home_team_name:
+                                        home_score = score_value
+                                    elif team_name == away_team_name:
+                                        away_score = score_value
+                        
+                        # Update game scores in database
+                        self.game_repository.update_game_scores(
+                            game_id=game_id,
+                            home_score=home_score,
+                            away_score=away_score,
+                            completed=completed,
+                            last_update=last_update
+                        )
+                        
+                        logger.info(f"[SCORES] Updated scores for game {game_id}: {away_score} - {home_score} (Completed: {completed})")
+                        
+                        return {
+                            "success": True,
+                            "game_id": game_id,
+                            "event_id": event_id,
+                            "home_score": home_score,
+                            "away_score": away_score,
+                            "completed": completed,
+                            "last_update": last_update
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "message": f"No score data found for event {event_id}"
+                        }
+                else:
+                    return {
+                        "success": False,
+                        "message": f"No scores available for game {game_id}"
+                    }
+            except Exception as e:
+                logger.error(f"Error fetching scores from The Odds API: {e}")
+                return {
+                    "success": False,
+                    "message": f"Error fetching scores: {str(e)}"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting scores for game {game_id}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to get scores: {e}"
+            }
+    
     def _find_odds_api_event_id(self, game: Dict[str, Any]) -> Optional[str]:
         """
         Find The Odds API event ID by matching teams and date.
@@ -573,11 +720,17 @@ class OddsService:
                 }
                 
                 # Add points market data (required)
+                # Use the point value from Over outcome (both Over and Under should have the same point value)
                 if player_data['player_points'].get('over'):
-                    odds_entry['points_line'] = player_data['player_points']['over']['point']
+                    points_line_value = player_data['player_points']['over']['point']
+                    odds_entry['points_line'] = points_line_value
                     odds_entry['odds'] = player_data['player_points']['over']['price']
                     if player_data['player_points'].get('under'):
                         odds_entry['under_odds'] = player_data['player_points']['under']['price']
+                        # Verify that Over and Under have the same point value (they should)
+                        under_point = player_data['player_points']['under']['point']
+                        if under_point != points_line_value:
+                            logger.warning(f"[ODDS] Point mismatch for {player_data['name']}: Over={points_line_value}, Under={under_point}, using Over value")
                 
                 # Add assists market data (optional)
                 if player_data['player_assists'].get('over'):
@@ -601,7 +754,7 @@ class OddsService:
                             'odds': []
                         }
                     odds_players_map[player_name_lower]['odds'].append(odds_entry)
-                    logger.debug(f"[ODDS] Combined odds for {player_data['name']}: PTS={odds_entry.get('points_line')}, AST={odds_entry.get('assists_line')}, REB={odds_entry.get('rebounds_line')}")
+                    logger.info(f"[ODDS] Combined odds for {player_data['name']}: PTS={odds_entry.get('points_line')}, AST={odds_entry.get('assists_line')}, REB={odds_entry.get('rebounds_line')}, Bookmaker={bookmaker.get('key')}")
         
         # Get players for both teams - try database first (depth charts), fallback to NBA API
         home_team_abbr = game.get('home_team', '')
@@ -746,6 +899,13 @@ class OddsService:
                 # Update points_line, assists_line, rebounds_line in database for this STARTER player
                 if game_date and player_odds_data['odds']:
                     try:
+                        # Use the first odds entry (should only be one from FanDuel)
+                        # If there are multiple entries, log a warning
+                        if len(player_odds_data['odds']) > 1:
+                            logger.warning(f"[ODDS] Multiple odds entries found for {matched_starter['player_name']}: {len(player_odds_data['odds'])} entries. Using first one.")
+                            for idx, entry in enumerate(player_odds_data['odds']):
+                                logger.warning(f"[ODDS] Entry {idx}: PTS={entry.get('points_line')}, Bookmaker={entry.get('bookmaker_key')}")
+                        
                         first_odds_entry = player_odds_data['odds'][0]
                         points_line = first_odds_entry.get('points_line')
                         assists_line = first_odds_entry.get('assists_line')
@@ -753,6 +913,33 @@ class OddsService:
                         over_odds = first_odds_entry.get('odds')
                         under_odds = first_odds_entry.get('under_odds')
                         bookmaker = first_odds_entry.get('bookmaker')
+                        
+                        # Calculate OVER/UNDER history using official NBA ID (only if local game logs available)
+                        # This must be done BEFORE updating the database
+                        over_under_history = None
+                        if self.player_stats_service and points_line and player_id_to_use:
+                            try:
+                                logger.debug(f"[ODDS] Calculating OVER/UNDER for STARTER {matched_starter['player_name']} using NBA ID {player_id_to_use} (local-only)")
+                                # Use local-only mode to avoid NBA API calls during odds loading
+                                over_under_history = self.player_stats_service.calculate_over_under_history(
+                                    player_id=player_id_to_use,
+                                    points_line=points_line,
+                                    num_games=25,
+                                    player_name=matched_starter['player_name'],
+                                    use_local_only=True,  # Only use local game logs, no NBA API calls
+                                    assists_line=assists_line,
+                                    rebounds_line=rebounds_line
+                                )
+                                if over_under_history.get('total_games', 0) > 0:
+                                    logger.debug(f"OVER/UNDER history for {matched_starter['player_name']}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
+                                else:
+                                    logger.debug(f"No local game logs available for {matched_starter['player_name']}, skipping OVER/UNDER calculation")
+                                    over_under_history = None  # Don't include if no games
+                            except Exception as e:
+                                logger.warning(f"Could not calculate OVER/UNDER history for player {matched_starter['player_name']}: {e}")
+                        
+                        # Log the values being saved for debugging
+                        logger.info(f"[ODDS] Updating lines for STARTER {matched_starter['player_name']} (ID: {matched_starter['player_id']}): PTS={points_line}, AST={assists_line}, REB={rebounds_line}, Bookmaker={bookmaker}")
                         
                         self.lineup_repository.update_points_line_for_player(
                             game_id=game_id,
@@ -787,35 +974,6 @@ class OddsService:
                                 logger.warning(f"Could not save odds history for STARTER player {matched_starter['player_name']}: {e}")
                     except Exception as e:
                         logger.warning(f"Could not update points_line for STARTER player {matched_starter['player_name']}: {e}")
-                
-                # Calculate OVER/UNDER history using official NBA ID (only if local game logs available)
-                over_under_history = None
-                if self.player_stats_service and player_odds_data['odds']:
-                    try:
-                        first_odds_entry = player_odds_data['odds'][0]
-                        points_line = first_odds_entry.get('points_line')
-                        assists_line = first_odds_entry.get('assists_line')
-                        rebounds_line = first_odds_entry.get('rebounds_line')
-                        
-                        if points_line and player_id_to_use:
-                            logger.debug(f"[ODDS] Calculating OVER/UNDER for STARTER {player_name} using NBA ID {player_id_to_use} (local-only)")
-                            # Use local-only mode to avoid NBA API calls during odds loading
-                            over_under_history = self.player_stats_service.calculate_over_under_history(
-                                player_id=player_id_to_use,
-                                points_line=points_line,
-                                num_games=25,
-                                player_name=matched_starter['player_name'],
-                                use_local_only=True,  # Only use local game logs, no NBA API calls
-                                assists_line=assists_line,
-                                rebounds_line=rebounds_line
-                            )
-                            if over_under_history.get('total_games', 0) > 0:
-                                logger.debug(f"OVER/UNDER history for {matched_starter['player_name']}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
-                            else:
-                                logger.debug(f"No local game logs available for {matched_starter['player_name']}, skipping OVER/UNDER calculation")
-                                over_under_history = None  # Don't include if no games
-                    except Exception as e:
-                        logger.warning(f"Could not calculate OVER/UNDER history for player {matched_starter['player_name']}: {e}")
                 
                 for odds_entry in player_odds_data['odds']:
                     player_data = {
