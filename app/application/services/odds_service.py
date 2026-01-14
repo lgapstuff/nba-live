@@ -3,6 +3,7 @@ Odds service for matching player odds with lineups.
 """
 import json
 import logging
+import unicodedata
 from typing import Dict, Any, List, Optional
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta
@@ -460,22 +461,43 @@ class OddsService:
         matched_players = []
         has_lineup = lineup and 'lineups' in lineup
         
+        # Helper function to normalize player names (remove accents)
+        def normalize_player_name_for_matching(name: str) -> str:
+            """Normalize player name by removing accents and converting to lowercase."""
+            if not name:
+                return ""
+            normalized = unicodedata.normalize('NFD', name)
+            normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+            normalized = normalized.replace("'", "").replace("'", "").replace("'", "")
+            normalized = " ".join(normalized.split())
+            return normalized.lower()
+        
         # Extract STARTER players from lineup (only PG, SG, SF, PF, C positions)
-        starter_players = {}  # player_name_lower -> player_data
+        starter_players = {}  # normalized_name -> player_data
+        starter_players_by_id = {}  # player_id -> player_data (for ID-based lookup)
+        starter_player_ids = set()  # Track player IDs to avoid duplicates
         if has_lineup:
             for team_abbr, positions in lineup['lineups'].items():
                 for position, player_data in positions.items():
                     # Only consider actual positions (starters), not BENCH
                     if position in ['PG', 'SG', 'SF', 'PF', 'C']:
                         player_name = player_data.get('player_name', '')
+                        player_id = player_data.get('player_id')
                         if player_name:
-                            starter_players[player_name.lower()] = {
+                            # Store by normalized name for matching
+                            normalized_name = normalize_player_name_for_matching(player_name)
+                            player_entry = {
                                 'player_name': player_name,
-                                'player_id': player_data.get('player_id'),
+                                'player_id': player_id,
                                 'position': position,
                                 'team': team_abbr,
                                 'player_status': 'STARTER'
                             }
+                            starter_players[normalized_name] = player_entry
+                            # Also track by player ID to catch duplicates with different name spellings
+                            if player_id:
+                                starter_player_ids.add(player_id)
+                                starter_players_by_id[player_id] = player_entry
         
         # Get game date for saving players (use lineup_date if available, otherwise game_date)
         game_date = None
@@ -679,8 +701,22 @@ class OddsService:
         for player_name_lower, player_odds_data in odds_players_map.items():
             player_name = player_odds_data['name']
             
-            # First, check if player is in starters
-            matched_starter = starter_players.get(player_name_lower)
+            # Normalize the odds player name for matching
+            normalized_odds_name = normalize_player_name_for_matching(player_name)
+            
+            # First, check if player is in starters by normalized name
+            matched_starter = starter_players.get(normalized_odds_name)
+            
+            # If not found by name, try to find by player_id if we have it from team_players_list
+            if not matched_starter:
+                # Try to find the player in team_players_list to get their ID
+                team_player = self._find_matching_player_in_list(player_name, team_players_list)
+                if team_player and team_player.get('player_id'):
+                    player_id = team_player.get('player_id')
+                    # Check if this player_id is already a STARTER
+                    if player_id in starter_players_by_id:
+                        matched_starter = starter_players_by_id[player_id]
+                        logger.info(f"[ODDS] Matched {player_name} to STARTER {matched_starter['player_name']} by player_id {player_id}")
             
             if matched_starter:
                 # Player is a STARTER - but we need to find their official NBA ID
@@ -758,6 +794,8 @@ class OddsService:
                     try:
                         first_odds_entry = player_odds_data['odds'][0]
                         points_line = first_odds_entry.get('points_line')
+                        assists_line = first_odds_entry.get('assists_line')
+                        rebounds_line = first_odds_entry.get('rebounds_line')
                         
                         if points_line and player_id_to_use:
                             logger.debug(f"[ODDS] Calculating OVER/UNDER for STARTER {player_name} using NBA ID {player_id_to_use} (local-only)")
@@ -767,7 +805,9 @@ class OddsService:
                                 points_line=points_line,
                                 num_games=25,
                                 player_name=matched_starter['player_name'],
-                                use_local_only=True  # Only use local game logs, no NBA API calls
+                                use_local_only=True,  # Only use local game logs, no NBA API calls
+                                assists_line=assists_line,
+                                rebounds_line=rebounds_line
                             )
                             if over_under_history.get('total_games', 0) > 0:
                                 logger.debug(f"OVER/UNDER history for {matched_starter['player_name']}: {over_under_history.get('over_count')} OVER, {over_under_history.get('under_count')} UNDER")
@@ -805,12 +845,18 @@ class OddsService:
                 team_player = self._find_matching_player_in_list(player_name, team_players_list)
                 
                 if team_player:
-                    # Player found in team roster (NBA API or depth chart) - it's a BENCH player
+                    # Player found in team roster (NBA API or depth chart)
                     team_abbr = team_player['team']
                     player_id = team_player.get('player_id', 0)
                     player_position = team_player.get('position', 'BENCH')
                     player_source = team_player.get('source', 'unknown')
                     
+                    # Check if this player is already a STARTER by player ID (to catch duplicates with different name spellings)
+                    if player_id and player_id in starter_player_ids:
+                        logger.info(f"[ODDS] Skipping {player_name} (NBA ID: {player_id}) - already exists as STARTER")
+                        continue
+                    
+                    # It's a BENCH player (not in starters and not already a starter by ID)
                     logger.info(f"[ODDS] Matched {player_name} from odds with {team_player.get('player_name', player_name)} from {player_source} (NBA ID: {player_id}, Team: {team_abbr})")
                     
                     # Calculate OVER/UNDER history if player_stats_service is available (only if local game logs available)
@@ -929,13 +975,18 @@ class OddsService:
         Returns:
             Matched player dictionary or None
         """
-        # Normalize names (remove special characters, handle apostrophes)
+        # Normalize names (remove special characters, handle apostrophes, remove accents)
         def normalize_name(name: str) -> str:
+            if not name:
+                return ""
+            # Remove accents and special characters (e.g., č -> c, é -> e)
+            normalized = unicodedata.normalize('NFD', name)
+            normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
             # Remove apostrophes and normalize whitespace
-            normalized = name.replace("'", "").replace("'", "").replace("'", "")
-            # Remove extra spaces
+            normalized = normalized.replace("'", "").replace("'", "").replace("'", "")
+            # Remove extra spaces and convert to lowercase for comparison
             normalized = " ".join(normalized.split())
-            return normalized
+            return normalized.lower()
         
         normalized_odds_name = normalize_name(odds_player_name)
         
@@ -988,25 +1039,54 @@ class OddsService:
         if not players_list:
             return None
         
-        player_name_lower = player_name.lower().strip()
+        # Normalize name (remove accents and special characters)
+        def normalize_name(name: str) -> str:
+            if not name:
+                return ""
+            # Remove accents and special characters (e.g., č -> c, é -> e)
+            normalized = unicodedata.normalize('NFD', name)
+            normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+            # Remove apostrophes and normalize whitespace
+            normalized = normalized.replace("'", "").replace("'", "").replace("'", "")
+            # Remove extra spaces and convert to lowercase for comparison
+            normalized = " ".join(normalized.split())
+            return normalized.lower()
         
-        # Create a dictionary keyed by lowercase name for quick lookup
+        player_name_normalized = normalize_name(player_name)
+        
+        # Create dictionaries keyed by both original and normalized names for quick lookup
         players_by_name = {p['player_name'].lower().strip(): p for p in players_list}
+        players_by_normalized = {normalize_name(p['player_name']): p for p in players_list}
         
-        # Direct match
+        # Direct match (original)
+        player_name_lower = player_name.lower().strip()
         if player_name_lower in players_by_name:
             return players_by_name[player_name_lower]
         
-        # Fuzzy match
+        # Direct match (normalized)
+        if player_name_normalized in players_by_normalized:
+            return players_by_normalized[player_name_normalized]
+        
+        # Fuzzy match using normalized names
         best_match = None
         best_similarity = 0.0
         
         for player in players_list:
-            lineup_name = player['player_name'].lower().strip()
-            similarity = SequenceMatcher(None, player_name_lower, lineup_name).ratio()
+            lineup_name = player['player_name']
+            lineup_name_normalized = normalize_name(lineup_name)
+            lineup_name_lower = lineup_name.lower().strip()
+            
+            # Compare normalized names
+            normalized_similarity = SequenceMatcher(None, player_name_normalized, lineup_name_normalized).ratio()
+            
+            # Also compare original names
+            original_similarity = SequenceMatcher(None, player_name_lower, lineup_name_lower).ratio()
+            
+            # Use the best similarity
+            similarity = max(normalized_similarity, original_similarity)
             
             # Also check if names contain each other (for nicknames, etc.)
-            if player_name_lower in lineup_name or lineup_name in player_name_lower:
+            if player_name_normalized in lineup_name_normalized or lineup_name_normalized in player_name_normalized:
                 similarity = max(similarity, 0.85)
             
             if similarity > best_similarity and similarity >= 0.75:

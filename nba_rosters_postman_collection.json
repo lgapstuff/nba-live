@@ -1,0 +1,1539 @@
+{
+  "info": {
+    "name": "NBA Rosters API",
+    "description": "Collection para obtener rosters de equipos NBA",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "ATL - Atlanta Hawks",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612737&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612737"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "BKN - Brooklyn Nets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612751&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612751"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "BOS - Boston Celtics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612738&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612738"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "CHA - Charlotte Hornets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612766&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612766"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "CHI - Chicago Bulls",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612741&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612741"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "CLE - Cleveland Cavaliers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612739&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612739"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "DAL - Dallas Mavericks",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612742&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612742"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "DEN - Denver Nuggets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612743&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612743"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "DET - Detroit Pistons",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612765&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612765"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "GS - Golden State Warriors",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612744&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612744"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "HOU - Houston Rockets",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612745&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612745"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "IND - Indiana Pacers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612754&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612754"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "LAC - Los Angeles Clippers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612746&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612746"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "LAL - Los Angeles Lakers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612747&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612747"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "MEM - Memphis Grizzlies",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612763&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612763"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "MIA - Miami Heat",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612748&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612748"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "MIL - Milwaukee Bucks",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612749&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612749"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "MIN - Minnesota Timberwolves",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612750&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612750"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "NO - New Orleans Pelicans",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612740&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612740"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "NY - New York Knicks",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612752&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612752"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "OKC - Oklahoma City Thunder",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612760&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612760"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ORL - Orlando Magic",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612753&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612753"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "PHI - Philadelphia 76ers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612755&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612755"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "PHO - Phoenix Suns",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612756&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612756"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "POR - Portland Trail Blazers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612757&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612757"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "SA - San Antonio Spurs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612759&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612759"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "SAC - Sacramento Kings",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612758&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612758"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "TOR - Toronto Raptors",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612761&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612761"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "UTA - Utah Jazz",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612762&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612762"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "WAS - Washington Wizards",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/plain, */*"
+          },
+          {
+            "key": "Accept-Language",
+            "value": "en-US,en;q=0.9"
+          },
+          {
+            "key": "Origin",
+            "value": "https://www.nba.com"
+          },
+          {
+            "key": "Referer",
+            "value": "https://www.nba.com/"
+          },
+          {
+            "key": "User-Agent",
+            "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        ],
+        "url": {
+          "raw": "https://stats.nba.com/stats/commonteamroster?TeamID=1610612764&Season=2024-25",
+          "protocol": "https",
+          "host": [
+            "stats",
+            "nba",
+            "com"
+          ],
+          "path": [
+            "stats",
+            "commonteamroster"
+          ],
+          "query": [
+            {
+              "key": "TeamID",
+              "value": "1610612764"
+            },
+            {
+              "key": "Season",
+              "value": "2024-25"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

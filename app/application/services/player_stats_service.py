@@ -29,7 +29,9 @@ class PlayerStatsService:
     
     def calculate_over_under_history(self, player_id: int, points_line: float, 
                                     num_games: int = 10, player_name: Optional[str] = None,
-                                    use_local_only: bool = False) -> Dict[str, Any]:
+                                    use_local_only: bool = False,
+                                    assists_line: Optional[float] = None,
+                                    rebounds_line: Optional[float] = None) -> Dict[str, Any]:
         """
         Calculate OVER/UNDER history for a player based on their last N games.
         
@@ -57,6 +59,7 @@ class PlayerStatsService:
             if self.game_log_service:
                 try:
                     # If we have player_name, try to find NBA player ID first for local lookup
+                    # But skip this in local-only mode to avoid unnecessary API calls
                     nba_player_id = None
                     if player_name and not use_local_only:
                         # Only try to find NBA ID if we're not in local-only mode
@@ -64,13 +67,16 @@ class PlayerStatsService:
                         nba_player_id = self.nba_api.find_nba_player_id_by_name(player_name)
                         if nba_player_id:
                             logger.debug(f"[OVER/UNDER] Found NBA player ID {nba_player_id} for {player_name}")
+                    elif player_name and use_local_only:
+                        # In local-only mode, don't search for NBA ID to avoid API calls
+                        logger.debug(f"[OVER/UNDER] Local-only mode: skipping NBA ID search for {player_name}")
                     
                     # Try with NBA player ID first if found, otherwise use provided player_id
                     target_player_id = nba_player_id if nba_player_id else player_id
                     
                     logger.debug(f"[OVER/UNDER] Attempting to use local game logs for player {target_player_id}")
                     result = self.game_log_service.calculate_over_under_from_local(
-                        target_player_id, points_line, num_games
+                        target_player_id, points_line, num_games, assists_line, rebounds_line
                     )
                     if result.get('total_games', 0) > 0:
                         logger.info(f"[OVER/UNDER] Using local game logs: {result.get('over_count')} OVER, {result.get('under_count')} UNDER")
@@ -163,6 +169,10 @@ class PlayerStatsService:
             
             over_count = 0
             under_count = 0
+            assists_over_count = 0
+            assists_under_count = 0
+            rebounds_over_count = 0
+            rebounds_under_count = 0
             games_with_result = []
             
             for game in games:
@@ -175,6 +185,24 @@ class PlayerStatsService:
                     points = float(game['pts']) if game['pts'] is not None else None
                 elif 'POINTS' in game:
                     points = float(game['POINTS']) if game['POINTS'] is not None else None
+                
+                # Get assists
+                assists = None
+                if 'AST' in game:
+                    assists = float(game['AST']) if game['AST'] is not None else None
+                elif 'ast' in game:
+                    assists = float(game['ast']) if game['ast'] is not None else None
+                elif 'ASSISTS' in game:
+                    assists = float(game['ASSISTS']) if game['ASSISTS'] is not None else None
+                
+                # Get rebounds
+                rebounds = None
+                if 'REB' in game:
+                    rebounds = float(game['REB']) if game['REB'] is not None else None
+                elif 'reb' in game:
+                    rebounds = float(game['reb']) if game['reb'] is not None else None
+                elif 'REBOUNDS' in game:
+                    rebounds = float(game['REBOUNDS']) if game['REBOUNDS'] is not None else None
                 
                 if points is not None:
                     # Determine if OVER or UNDER
@@ -194,12 +222,26 @@ class PlayerStatsService:
                         'result': result,
                         'opponent': game.get('MATCHUP', game.get('matchup', ''))
                     })
+                
+                # Calculate assists OVER/UNDER if assists_line is provided
+                if assists_line is not None and assists is not None:
+                    if assists > assists_line:
+                        assists_over_count += 1
+                    elif assists < assists_line:
+                        assists_under_count += 1
+                
+                # Calculate rebounds OVER/UNDER if rebounds_line is provided
+                if rebounds_line is not None and rebounds is not None:
+                    if rebounds > rebounds_line:
+                        rebounds_over_count += 1
+                    elif rebounds < rebounds_line:
+                        rebounds_under_count += 1
             
             total_games = len(games_with_result)
             over_percentage = (over_count / total_games * 100) if total_games > 0 else 0.0
             under_percentage = (under_count / total_games * 100) if total_games > 0 else 0.0
             
-            return {
+            result = {
                 'over_count': over_count,
                 'under_count': under_count,
                 'total_games': total_games,
@@ -208,6 +250,18 @@ class PlayerStatsService:
                 'games': games_with_result,
                 'source': 'nba_api'
             }
+            
+            # Add assists OVER/UNDER counts if assists_line was provided
+            if assists_line is not None:
+                result['assists_over_count'] = assists_over_count
+                result['assists_under_count'] = assists_under_count
+            
+            # Add rebounds OVER/UNDER counts if rebounds_line was provided
+            if rebounds_line is not None:
+                result['rebounds_over_count'] = rebounds_over_count
+                result['rebounds_under_count'] = rebounds_under_count
+            
+            return result
             
         except Exception as e:
             logger.error(f"Error calculating OVER/UNDER history for player {player_id}: {e}", exc_info=True)

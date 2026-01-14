@@ -75,10 +75,120 @@ class GameLogController:
                 "message": f"Internal server error: {str(e)}"
             }), 500
     
+    def load_player_game_logs(self, player_id: int, player_name: str = None, num_games: int = 25) -> Tuple[Dict[str, Any], int]:
+        """
+        Load game logs for a specific player from NBA API and save to database.
+        
+        Args:
+            player_id: NBA player ID
+            player_name: Player name (optional, used for logging)
+            num_games: Number of recent games to load (default: 25)
+            
+        Returns:
+            JSON response with loading results and status code
+        """
+        try:
+            logger.info(f"Loading game logs for player {player_id} ({player_name or 'Unknown'})")
+            
+            # Load from NBA API with timeout protection
+            import threading
+            import queue
+            
+            result_queue = queue.Queue()
+            exception_queue = queue.Queue()
+            
+            def fetch_games():
+                try:
+                    games = self.game_log_service.nba_api.get_player_last_n_games(player_id, n=num_games)
+                    result_queue.put(games)
+                except Exception as e:
+                    exception_queue.put(e)
+            
+            # Start the fetch in a separate thread
+            fetch_thread = threading.Thread(target=fetch_games, daemon=True)
+            fetch_thread.start()
+            
+            # Wait for result with timeout (20 seconds)
+            fetch_thread.join(timeout=20.0)
+            
+            if fetch_thread.is_alive():
+                # Thread is still running, timeout occurred
+                logger.warning(f"Timeout loading game logs from NBA API for player {player_id} (20s timeout)")
+                return jsonify({
+                    "success": False,
+                    "message": f"Timeout loading game logs for player {player_id}",
+                    "player_id": player_id,
+                    "games_loaded": 0
+                }), 408
+            
+            # Thread finished, check results
+            if not exception_queue.empty():
+                error = exception_queue.get_nowait()
+                error_msg = str(error).lower()
+                if 'timeout' in error_msg or 'timed out' in error_msg:
+                    logger.warning(f"Timeout loading game logs from NBA API for player {player_id}: {error}")
+                    return jsonify({
+                        "success": False,
+                        "message": f"Timeout loading game logs for player {player_id}",
+                        "player_id": player_id,
+                        "games_loaded": 0
+                    }), 408
+                else:
+                    logger.error(f"Error loading game logs from NBA API for player {player_id}: {error}")
+                    return jsonify({
+                        "success": False,
+                        "message": f"Error loading game logs: {error}",
+                        "player_id": player_id,
+                        "games_loaded": 0
+                    }), 500
+            
+            if not result_queue.empty():
+                games = result_queue.get_nowait()
+                
+                if games:
+                    # Save to database
+                    saved_count = self.game_log_service.game_log_repository.save_player_game_logs(
+                        player_id=player_id,
+                        player_name=player_name or f"Player_{player_id}",
+                        games=games
+                    )
+                    logger.info(f"Loaded and saved {saved_count} game logs for player {player_id} from NBA API")
+                    
+                    return jsonify({
+                        "success": True,
+                        "player_id": player_id,
+                        "player_name": player_name,
+                        "games_loaded": saved_count,
+                        "total_games": len(games)
+                    }), 200
+                else:
+                    logger.warning(f"No games found in NBA API for player {player_id}")
+                    return jsonify({
+                        "success": False,
+                        "message": f"No games found for player {player_id}",
+                        "player_id": player_id,
+                        "games_loaded": 0
+                    }), 404
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": f"No result received for player {player_id}",
+                    "player_id": player_id,
+                    "games_loaded": 0
+                }), 500
+            
+        except Exception as e:
+            logger.error(f"Error in load_player_game_logs: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "message": f"Internal server error: {str(e)}",
+                "player_id": player_id
+            }), 500
+    
     def get_player_game_logs(self, player_id: int, player_name: str = None) -> Tuple[Dict[str, Any], int]:
         """
-        Get game logs for a specific player.
-        If not in database, loads from NBA API and saves them (lazy loading).
+        Get game logs for a specific player from database only.
+        Does NOT load from NBA API (use POST /players/<player_id>/game-logs/load to pre-load).
         
         Args:
             player_id: NBA player ID
@@ -88,40 +198,18 @@ class GameLogController:
             JSON response with game logs and status code
         """
         try:
-            # First, check if we have game logs in database
+            # Only get game logs from database - no lazy loading
+            # Game logs should be pre-loaded using POST /players/<player_id>/game-logs/load
             game_logs = self.game_log_service.get_player_game_logs(player_id, limit=25)
             
-            # If we have less than 10 games, try to load from NBA API
-            if len(game_logs) < 10:
-                logger.info(f"Only {len(game_logs)} game logs found in DB for player {player_id}. Loading from NBA API...")
-                
-                # Load from NBA API and save to database
-                try:
-                    games = self.game_log_service.nba_api.get_player_last_n_games(player_id, n=25)
-                    
-                    if games:
-                        # Save to database
-                        saved_count = self.game_log_service.game_log_repository.save_player_game_logs(
-                            player_id=player_id,
-                            player_name=player_name or f"Player_{player_id}",
-                            games=games
-                        )
-                        logger.info(f"Loaded and saved {saved_count} game logs for player {player_id} from NBA API")
-                        
-                        # Get updated game logs from database
-                        game_logs = self.game_log_service.get_player_game_logs(player_id, limit=25)
-                    else:
-                        logger.warning(f"No games found in NBA API for player {player_id}")
-                except Exception as e:
-                    logger.error(f"Error loading game logs from NBA API for player {player_id}: {e}")
-                    # Continue with whatever we have in DB
+            logger.debug(f"Retrieved {len(game_logs)} game logs from DB for player {player_id}")
             
             return jsonify({
                 "success": True,
                 "player_id": player_id,
                 "game_logs": game_logs,
                 "total_games": len(game_logs),
-                "loaded_from_db": len(game_logs) > 0
+                "loaded_from_db": True
             }), 200
             
         except Exception as e:

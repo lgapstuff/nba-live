@@ -227,6 +227,375 @@ window.loadGameLogsForGame = async function(gameId, buttonElement) {
         return;
     }
     
+    // Find the game card
+    const gameCard = buttonElement.closest('.game-card');
+    if (!gameCard) {
+        showError('Error: No se pudo encontrar la carta del juego');
+        return;
+    }
+    
+    // Get only selected players (with checkbox checked)
+    const allCheckboxes = gameCard.querySelectorAll('.player-game-log-checkbox');
+    const checkedCheckboxes = gameCard.querySelectorAll('.player-game-log-checkbox:checked');
+    
+    console.log(`[loadGameLogsForGame] Total checkboxes: ${allCheckboxes.length}, Checked: ${checkedCheckboxes.length}`);
+    
+    const selectedPlayers = [];
+    
+    checkedCheckboxes.forEach(checkbox => {
+        const playerId = checkbox.getAttribute('data-player-id');
+        const playerName = checkbox.getAttribute('data-player-name') || '';
+        const playerCard = checkbox.closest('[data-player-id]');
+        
+        console.log(`[loadGameLogsForGame] Processing checkbox - playerId: ${playerId}, playerName: ${playerName}, card found: ${!!playerCard}`);
+        
+        if (playerId && playerId !== '' && playerCard) {
+            selectedPlayers.push({
+                id: parseInt(playerId),
+                name: playerName,
+                card: playerCard,
+                checkbox: checkbox
+            });
+        }
+    });
+    
+    console.log(`[loadGameLogsForGame] Selected players: ${selectedPlayers.length}`);
+    
+    if (selectedPlayers.length === 0) {
+        showError('Por favor selecciona al menos un jugador para cargar game logs');
+        return;
+    }
+    
+    // Show loading state on button
+    const btnText = buttonElement.querySelector('.btn-text') || buttonElement;
+    const countSpan = btnText.querySelector('.selected-count') || gameCard.querySelector('.selected-count');
+    const originalButtonText = 'Cargar Game Logs';
+    
+    // Update button to show loading state
+    const updateButtonText = (count) => {
+        if (count > 0) {
+            // Show loading state - replace entire btn-text content
+            btnText.innerHTML = `Cargando ${count}...`;
+        } else {
+            // Restore original text with count span
+            if (countSpan) {
+                countSpan.textContent = '0';
+                btnText.innerHTML = `${originalButtonText} (<span class="selected-count">0</span>)`;
+            } else {
+                btnText.innerHTML = `${originalButtonText} (<span class="selected-count">0</span>)`;
+            }
+        }
+    };
+    
+    buttonElement.disabled = true;
+    updateButtonText(selectedPlayers.length);
+    
+    // Track which players to uncheck at the end
+    const playersToUncheck = [];
+    
+    try {
+        console.log(`Loading game logs for ${selectedPlayers.length} selected players in game ${gameId}`);
+        
+        let successCount = 0;
+        let skippedCount = 0;
+        let errorCount = 0;
+        let totalGamesLoaded = 0;
+        let remainingCount = selectedPlayers.length;
+        
+        // Process selected players one by one
+        for (let i = 0; i < selectedPlayers.length; i++) {
+            const player = selectedPlayers[i];
+            console.log(`Loading game logs for player ${player.id} (${player.name}) - ${i + 1}/${selectedPlayers.length}`);
+            
+            // First check if player already has game logs
+            try {
+                const checkUrl = `${API_BASE_URL}/nba/players/${player.id}/game-logs?player_name=${encodeURIComponent(player.name)}`;
+                const checkResponse = await fetch(checkUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (checkResponse.ok) {
+                    const checkData = await checkResponse.json();
+                    if (checkData.success && checkData.total_games && checkData.total_games >= 10) {
+                        // Player already has enough game logs, skip
+                        console.log(`✓ Player ${player.name} already has ${checkData.total_games} game logs, skipping...`);
+                        skippedCount++;
+                        playersToUncheck.push(player);
+                        remainingCount--;
+                        updateButtonText(remainingCount);
+                        continue;
+                    }
+                }
+            } catch (checkError) {
+                console.warn(`Could not check existing game logs for ${player.name}:`, checkError);
+                // Continue to load anyway
+            }
+            
+            // Show loading indicator on player card
+            showPlayerCardLoading(player.card, player.name);
+            
+            try {
+                const url = `${API_BASE_URL}/nba/players/${player.id}/game-logs/load?player_name=${encodeURIComponent(player.name)}&num_games=25`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        successCount++;
+                        totalGamesLoaded += data.games_loaded || 0;
+                        console.log(`✓ Loaded ${data.games_loaded || 0} games for ${player.name}`);
+                        // Mark for unchecking at the end
+                        playersToUncheck.push(player);
+                    } else {
+                        errorCount++;
+                        console.warn(`✗ Failed to load games for ${player.name}: ${data.message || 'Unknown error'}`);
+                    }
+                } else {
+                    errorCount++;
+                    const errorText = await response.text();
+                    console.warn(`✗ HTTP ${response.status} for ${player.name}: ${errorText}`);
+                }
+            } catch (error) {
+                errorCount++;
+                console.error(`✗ Error loading game logs for ${player.name}:`, error);
+            } finally {
+                // Hide loading indicator on player card
+                hidePlayerCardLoading(player.card);
+                remainingCount--;
+                updateButtonText(remainingCount);
+            }
+        }
+        
+        // Uncheck all processed players at once to avoid layout shifts
+        playersToUncheck.forEach(player => {
+            if (player.checkbox) {
+                player.checkbox.checked = false;
+            }
+        });
+        
+        // Update the count one final time (after unchecking)
+        // Use setTimeout to ensure DOM updates are complete
+        setTimeout(() => {
+            updateSelectedCount(gameCard);
+        }, 0);
+        
+        // Show summary
+        let message = '';
+        if (successCount > 0) {
+            message = `Game logs cargados: ${successCount} jugadores, ${totalGamesLoaded} juegos`;
+            if (skippedCount > 0) {
+                message += ` (${skippedCount} ya tenían game logs)`;
+            }
+            if (errorCount > 0) {
+                message += ` (${errorCount} errores)`;
+            }
+            showSuccess(message);
+        } else if (skippedCount > 0) {
+            showSuccess(`Todos los jugadores seleccionados ya tienen game logs cargados`);
+        } else {
+            showError(`No se pudieron cargar game logs para ningún jugador`);
+        }
+        
+    } catch (error) {
+        console.error('Error loading game logs for game:', error);
+        showError(`Error al cargar game logs: ${error.message || error}`);
+    } finally {
+        // First, uncheck all processed players (if not already done)
+        playersToUncheck.forEach(player => {
+            if (player.checkbox && player.checkbox.checked) {
+                player.checkbox.checked = false;
+            }
+        });
+        
+        // Get final count after unchecking
+        const finalCount = gameCard.querySelectorAll('.player-game-log-checkbox:checked').length;
+        
+        // Restore button text with proper HTML structure
+        btnText.innerHTML = `${originalButtonText} (<span class="selected-count">${finalCount}</span>)`;
+        
+        // Update button state
+        if (finalCount === 0) {
+            buttonElement.disabled = true;
+            buttonElement.style.opacity = '0.5';
+            buttonElement.style.cursor = 'not-allowed';
+        } else {
+            buttonElement.disabled = false;
+            buttonElement.style.opacity = '1';
+            buttonElement.style.cursor = 'pointer';
+        }
+        
+        // Update count using the function (which will find the newly created span)
+        // Use a small delay to ensure DOM is updated
+        setTimeout(() => {
+            updateSelectedCount(gameCard);
+        }, 10);
+    }
+};
+
+// Toggle select all players for a game
+window.toggleSelectAllPlayers = function(gameId, buttonElement) {
+    const gameCard = buttonElement.closest('.game-card');
+    if (!gameCard) return;
+    
+    const checkboxes = gameCard.querySelectorAll('.player-game-log-checkbox');
+    const checkedCount = gameCard.querySelectorAll('.player-game-log-checkbox:checked').length;
+    const allChecked = checkedCount === checkboxes.length;
+    
+    // Toggle all checkboxes
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = !allChecked;
+    });
+    
+    // Update button text
+    const btnText = buttonElement.querySelector('.btn-text') || buttonElement;
+    btnText.textContent = allChecked ? 'Seleccionar Todos' : 'Deseleccionar Todos';
+    
+    // Update selected count
+    updateSelectedCount(gameCard);
+};
+
+// Update selected count display
+function updateSelectedCount(gameCard) {
+    if (!gameCard) return;
+    
+    const checkboxes = gameCard.querySelectorAll('.player-game-log-checkbox');
+    const checkedCount = gameCard.querySelectorAll('.player-game-log-checkbox:checked').length;
+    
+    console.log(`[updateSelectedCount] Found ${checkboxes.length} checkboxes, ${checkedCount} checked`);
+    
+    // Try to find the count span - first in the button, then in the game card
+    const loadButton = gameCard.querySelector('.load-game-logs-btn');
+    let countSpan = null;
+    
+    if (loadButton) {
+        // Look for selected-count inside the button's btn-text
+        const btnText = loadButton.querySelector('.btn-text');
+        if (btnText) {
+            countSpan = btnText.querySelector('.selected-count');
+        }
+        // If not found, try direct query
+        if (!countSpan) {
+            countSpan = loadButton.querySelector('.selected-count');
+        }
+    }
+    
+    // If still not found, search in the entire game card
+    if (!countSpan) {
+        countSpan = gameCard.querySelector('.selected-count');
+    }
+    
+    if (countSpan) {
+        countSpan.textContent = checkedCount;
+        console.log(`[updateSelectedCount] Updated count to ${checkedCount}`);
+    } else {
+        console.warn('[updateSelectedCount] Could not find .selected-count element');
+        // Try to recreate it if button exists
+        if (loadButton) {
+            const btnText = loadButton.querySelector('.btn-text') || loadButton;
+            if (btnText && !btnText.querySelector('.selected-count')) {
+                // Restore the button structure if it's missing
+                const originalText = 'Cargar Game Logs';
+                btnText.innerHTML = `${originalText} (<span class="selected-count">${checkedCount}</span>)`;
+                console.log(`[updateSelectedCount] Recreated button structure with count ${checkedCount}`);
+            }
+        }
+    }
+    
+    // Enable/disable load button based on selection
+    if (loadButton) {
+        loadButton.disabled = checkedCount === 0;
+        if (checkedCount === 0) {
+            loadButton.style.opacity = '0.5';
+            loadButton.style.cursor = 'not-allowed';
+        } else {
+            loadButton.style.opacity = '1';
+            loadButton.style.cursor = 'pointer';
+            loadButton.removeAttribute('disabled');
+        }
+        console.log(`[updateSelectedCount] Button disabled: ${loadButton.disabled}, checkedCount: ${checkedCount}`);
+    } else {
+        console.warn('[updateSelectedCount] Could not find .load-game-logs-btn element');
+    }
+}
+
+// Show loading indicator on a player card
+function showPlayerCardLoading(playerCard, playerName) {
+    if (!playerCard) return;
+    
+    // Add loading class
+    playerCard.classList.add('loading');
+    
+    // Create or update loading overlay
+    let overlay = playerCard.querySelector('.player-loading-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'player-loading-overlay';
+        // Ensure parent has position relative (should already be set in CSS)
+        if (window.getComputedStyle(playerCard).position === 'static') {
+            playerCard.style.position = 'relative';
+        }
+        playerCard.appendChild(overlay);
+    }
+    overlay.innerHTML = `
+        <div class="player-loading-spinner"></div>
+        <div class="player-loading-text">Cargando...</div>
+    `;
+    overlay.classList.add('active');
+}
+
+// Hide loading indicator on a player card
+function hidePlayerCardLoading(playerCard) {
+    if (!playerCard) return;
+    
+    // Remove loading class
+    playerCard.classList.remove('loading');
+    
+    // Hide loading overlay
+    const overlay = playerCard.querySelector('.player-loading-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+        // Remove overlay after animation
+        setTimeout(() => {
+            if (overlay && overlay.parentNode) {
+                overlay.remove();
+            }
+        }, 300);
+    }
+}
+
+// Load roster for a specific game (must be in global scope for onclick)
+window.loadRosterForGame = async function(gameId, buttonElement) {
+    console.log('loadRosterForGame called with gameId:', gameId);
+    
+    if (!gameId) {
+        console.error('No gameId provided');
+        showError('Error: No se proporcionó un ID de juego');
+        return;
+    }
+    
+    if (!buttonElement) {
+        console.error('No buttonElement provided');
+        showError('Error: No se proporcionó el elemento del botón');
+        return;
+    }
+    
+    // Find the game card for this specific game
+    const gameCard = buttonElement.closest('.game-card');
+    if (!gameCard) {
+        showError('Error: No se pudo encontrar la carta del juego');
+        return;
+    }
+    
     // Show loading state on button
     const btnText = buttonElement.querySelector('.btn-text') || buttonElement;
     const originalText = btnText.textContent;
@@ -234,9 +603,9 @@ window.loadGameLogsForGame = async function(gameId, buttonElement) {
     buttonElement.disabled = true;
     
     try {
-        console.log(`Loading game logs for game ${gameId} from ${API_BASE_URL}/nba/games/${gameId}/game-logs`);
+        console.log(`Loading rosters for game ${gameId} from ${API_BASE_URL}/nba/games/${gameId}/rosters`);
         
-        const response = await fetch(`${API_BASE_URL}/nba/games/${gameId}/game-logs`, {
+        const response = await fetch(`${API_BASE_URL}/nba/games/${gameId}/rosters`, {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -259,18 +628,28 @@ window.loadGameLogsForGame = async function(gameId, buttonElement) {
         }
         
         const data = await response.json();
-        console.log('Game logs data received:', data);
+        console.log('Roster data received:', data);
         
         if (data.success) {
-            console.log(`Game logs loaded successfully: ${data.players_processed} players, ${data.games_loaded} games`);
-            showSuccess(`Game logs cargados: ${data.players_processed} jugadores, ${data.games_loaded} juegos`);
+            const teamsProcessed = data.teams_processed || 0;
+            const teamsSkipped = data.teams_skipped || 0;
+            const playersSaved = data.players_saved || 0;
+            
+            let message = `Rosters cargados: ${teamsProcessed} equipos, ${playersSaved} jugadores guardados.`;
+            if (teamsSkipped > 0) {
+                message += ` ${teamsSkipped} equipos ya tenían roster y se omitieron.`;
+            }
+            showSuccess(message);
+            
+            // Hide the button since rosters are now loaded
+            buttonElement.style.display = 'none';
         } else {
-            throw new Error(data.message || 'Error al cargar game logs');
+            throw new Error(data.message || 'Error al cargar rosters');
         }
         
     } catch (error) {
-        console.error('Error loading game logs for game:', error);
-        showError(`Error al cargar game logs: ${error.message || error}`);
+        console.error('Error loading rosters for game:', error);
+        showError(`Error al cargar rosters: ${error.message || error}`);
     } finally {
         // Restore button state
         btnText.textContent = originalText;
@@ -363,10 +742,13 @@ window.loadOddsForGame = async function(gameId, buttonElement) {
         if (data.success) {
             console.log('Odds loaded successfully, updating game card...');
             // Update only this specific game card instead of reloading all games
-            await updateGameCardWithLineups(gameId, gameCard);
+            const gameData = await updateGameCardWithLineups(gameId, gameCard);
+            
+            // Expand game card after loading odds
+            expandGameCard(gameCard);
             
             // Update cached games data with the updated game
-            if (cachedGamesData) {
+            if (cachedGamesData && gameData) {
                 const gameIndex = cachedGamesData.findIndex(g => g.game_id === gameId);
                 if (gameIndex !== -1) {
                     cachedGamesData[gameIndex] = gameData;
@@ -434,10 +816,16 @@ async function updateGameCardWithLineups(gameId, gameCard) {
                     loadOddsForGame(gameId, this);
                 });
             }
+            
+            // Return the gameData so it can be used by the caller
+            return gameData;
         }
+        
+        return null;
     } catch (error) {
         console.error(`Error updating game card ${gameId}:`, error);
         // Don't show error to user, just log it - the card will remain as is
+        return null;
     }
 }
 
@@ -567,12 +955,65 @@ function displayGames(games, hasLineups = false) {
     
     // Add event listeners to all action buttons
     if (hasLineups) {
+        // Select all buttons
+        const selectAllButtons = gamesContainer.querySelectorAll('.select-all-players-btn');
+        selectAllButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const gameId = this.getAttribute('data-game-id');
+                toggleSelectAllPlayers(gameId, this);
+            });
+        });
+        
+        // Game logs buttons
+        const loadGameLogsButtons = gamesContainer.querySelectorAll('.load-game-logs-btn');
+        loadGameLogsButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const gameId = this.getAttribute('data-game-id');
+                loadGameLogsForGame(gameId, this);
+            });
+        });
+        
+        // Initialize selected count for each game card and add checkbox listeners
+        gamesContainer.querySelectorAll('.game-card').forEach(gameCard => {
+            // Initialize immediately
+            updateSelectedCount(gameCard);
+            
+            // Add checkbox change listeners for this game card
+            const checkboxes = gameCard.querySelectorAll('.player-game-log-checkbox');
+            console.log(`[displayGames] Found ${checkboxes.length} checkboxes in game card`);
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    console.log(`[checkbox change] Checkbox changed, updating count`);
+                    updateSelectedCount(gameCard);
+                });
+            });
+            
+            // Also listen for clicks on the checkboxes (in case change event doesn't fire)
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('click', function() {
+                    setTimeout(() => {
+                        console.log(`[checkbox click] Checkbox clicked, updating count`);
+                        updateSelectedCount(gameCard);
+                    }, 10);
+                });
+            });
+        });
+        
         // Odds buttons
         const loadOddsButtons = gamesContainer.querySelectorAll('.load-odds-btn');
         loadOddsButtons.forEach(button => {
             button.addEventListener('click', function() {
                 const gameId = this.getAttribute('data-game-id');
                 loadOddsForGame(gameId, this);
+            });
+        });
+    } else {
+        // Roster buttons (only shown when lineups are not loaded)
+        const loadRosterButtons = gamesContainer.querySelectorAll('.load-roster-btn');
+        loadRosterButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const gameId = this.getAttribute('data-game-id');
+                loadRosterForGame(gameId, this);
             });
         });
     }
@@ -591,7 +1032,7 @@ function createGameCard(game, hasLineups = false) {
     card.innerHTML = `
         <div class="game-header">
             <div class="game-info">
-                <div class="game-date-time">${formatDate(gameDate)} - ${formatTime(gameTime)}</div>
+                <div class="game-date-time">${formatDate(gameDate)} - ${formatTime(gameTime, gameDate)}</div>
                 <div class="teams">
                     <div class="team">
                         <img src="${game.away_team_logo_url || getPlaceholderLogo()}" 
@@ -610,15 +1051,15 @@ function createGameCard(game, hasLineups = false) {
                     </div>
                 </div>
             </div>
+            ${hasLineups ? '<button class="expand-toggle-btn" data-game-id="' + game.game_id + '" onclick="toggleGameCard(this)" title="Expandir/Retraer"><span class="expand-icon">▼</span></button>' : ''}
         </div>
         
-        ${hasLineups ? `
         <div class="actions-section">
-                <button class="action-btn load-odds-btn full-width" data-game-id="${game.game_id}">
-                    Cargar Odds
-                </button>
+            ${!hasLineups ? '<button class="action-btn load-roster-btn" data-game-id="' + game.game_id + '"><span class="btn-text">Cargar Roster</span></button>' : ''}
+            ${hasLineups ? '<div class="game-logs-controls"><button class="action-btn select-all-players-btn" data-game-id="' + game.game_id + '"><span class="btn-text">Seleccionar Todos</span></button><button class="action-btn load-game-logs-btn" data-game-id="' + game.game_id + '"><span class="btn-text">Cargar Game Logs (<span class="selected-count">0</span>)</span></button></div><button class="action-btn load-odds-btn" data-game-id="' + game.game_id + '">Cargar Odds</button>' : ''}
         </div>
-        <div class="lineups-section">
+        ${hasLineups ? `
+        <div class="lineups-section collapsed">
                 ${createLineupsHTML(lineups, game.away_team, game.away_team_name, game.away_team_logo_url, game.game_id)}
                 ${createLineupsHTML(lineups, game.home_team, game.home_team_name, game.home_team_logo_url, game.game_id)}
         </div>
@@ -713,6 +1154,7 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
         return `
             <div class="position-card ${cardValueClass}" data-player-id="${playerId}" data-player-name="${player.player_name}">
                 <div class="position-label">${position}</div>
+                ${playerId ? `<input type="checkbox" class="player-game-log-checkbox" data-player-id="${playerId}" data-player-name="${player.player_name}" title="Seleccionar para cargar game logs">` : ''}
                 <img src="${player.player_photo_url || getPlaceholderPlayer()}" 
                      alt="${player.player_name}" 
                      class="player-photo"
@@ -769,6 +1211,7 @@ function createLineupsHTML(lineups, teamAbbr, teamName, teamLogoUrl, gameId) {
         return `
             <div class="position-card bench-card ${cardValueClass}" data-player-id="${playerId}" data-player-name="${player.player_name}">
                 <div class="position-label">BENCH</div>
+                ${playerId ? `<input type="checkbox" class="player-game-log-checkbox" data-player-id="${playerId}" data-player-name="${player.player_name}" title="Seleccionar para cargar game logs">` : ''}
                 <img src="${player.player_photo_url || getPlaceholderPlayer()}" 
                      alt="${player.player_name}" 
                      class="player-photo"
@@ -835,9 +1278,66 @@ function formatDate(dateString) {
     }
 }
 
-function formatTime(timeString) {
+function formatTime(timeString, dateString = null) {
     if (!timeString || timeString === 'N/A') return 'N/A';
     try {
+        // If we have both date and time, convert from Mexico City time to Tijuana timezone
+        if (dateString && dateString !== 'N/A') {
+            try {
+                // Parse the time string
+                const timePart = timeString.split('.')[0]; // Remove microseconds if present
+                const timeParts = timePart.split(':');
+                const hours = timeParts[0] || '00';
+                const minutes = timeParts[1] || '00';
+                const seconds = timeParts[2] || '00';
+                
+                // Create a date string assuming the time is in Mexico City timezone
+                // We'll create a date object and use timezone conversion
+                // The trick: create date in UTC by manually calculating the offset
+                // Mexico City is UTC-6 in standard time, UTC-5 in daylight time
+                // We'll assume UTC-6 for simplicity (or we could detect DST)
+                
+                // Better approach: Create date assuming it's in Mexico City, then convert to Tijuana
+                // We'll use a workaround: create the date as if it's UTC, then adjust
+                
+                // Create ISO string
+                const isoString = `${dateString}T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}:${seconds.padStart(2, '0')}`;
+                
+                // Create a date object - this will be interpreted in local time
+                // We need to convert from Mexico City to Tijuana
+                // The proper way: use a timezone-aware approach
+                
+                // Practical solution: Use Intl to format
+                // First, we need to create a date that represents the time in Mexico City
+                // Since Date() doesn't accept timezone, we'll use a workaround:
+                // 1. Get current time in Mexico City for the date
+                // 2. Calculate the difference
+                // 3. Adjust and format in Tijuana
+                
+                // Simpler: Assume the time difference is constant (2 hours)
+                // Tijuana is typically 2 hours behind Mexico City
+                // This works for most cases, though DST transitions might cause minor issues
+                
+                let hourInt = parseInt(hours);
+                let minuteInt = parseInt(minutes);
+                
+                // Tijuana is 2 hours behind Mexico City
+                // Subtract 2 hours
+                hourInt = hourInt - 2;
+                if (hourInt < 0) {
+                    hourInt = hourInt + 24;
+                }
+                
+                return `${String(hourInt).padStart(2, '0')}:${String(minuteInt).padStart(2, '0')}`;
+            } catch (e) {
+                console.warn('Error converting time to Tijuana timezone, using original:', e);
+                // Fallback to original format
+                const [hours, minutes] = timeString.split(':');
+                return `${hours}:${minutes}`;
+            }
+        }
+        
+        // Fallback: just format the time string
         const [hours, minutes] = timeString.split(':');
         return `${hours}:${minutes}`;
     } catch (e) {
@@ -911,8 +1411,9 @@ function calculatePlayerValuePriority(player) {
     
     let valueIndicators = [];
     
-    // Check points value - with defensive validation
-    if (totalGames > 0 && typeof totalGames === 'number' && !isNaN(totalGames)) {
+    // Check points value - only if we have points_line and game logs
+    if (player.points_line !== null && player.points_line !== undefined && 
+        totalGames > 0 && typeof totalGames === 'number' && !isNaN(totalGames)) {
         const overCount = history.over_count || 0;
         const underCount = history.under_count || 0;
         
@@ -960,20 +1461,31 @@ function calculatePlayerValuePriority(player) {
     }
     
     // Find the highest value indicator
+    // Priority: First by level (highest > very-high > high > medium), then by percentage
     const levelPriority = { 'highest': 4, 'very-high': 3, 'high': 2, 'medium': 1, 'none': 0 };
     const highestValueIndicator = valueIndicators.reduce((max, indicator) => {
-        if (indicator.percentage > max.percentage) {
+        const maxPriority = levelPriority[max.level] || 0;
+        const indicatorPriority = levelPriority[indicator.level] || 0;
+        
+        // First compare by level priority (higher level wins)
+        if (indicatorPriority > maxPriority) {
             return indicator;
-        } else if (indicator.percentage === max.percentage) {
-            const maxPriority = levelPriority[max.level] || 0;
-            const indicatorPriority = levelPriority[indicator.level] || 0;
-            return indicatorPriority > maxPriority ? indicator : max;
+        } else if (indicatorPriority < maxPriority) {
+            return max;
+        } else {
+            // If same level, compare by percentage (higher percentage wins)
+            if (indicator.percentage > max.percentage) {
+                return indicator;
+            }
+            return max;
         }
-        return max;
     }, valueIndicators[0]);
     
     // Calculate priority: level priority * 1000 + percentage (for sorting)
     const priority = (levelPriority[highestValueIndicator.level] || 0) * 1000 + highestValueIndicator.percentage;
+    
+    // Debug logging
+    console.log(`[calculatePlayerValuePriority] Player: ${player.player_name || 'Unknown'}, Indicators:`, valueIndicators.map(i => `${i.type}: ${i.level} (${i.percentage.toFixed(1)}%)`).join(', '), 'Highest:', highestValueIndicator.type, 'Class:', highestValueIndicator.class);
     
     return {
         priority: priority,
@@ -2410,6 +2922,56 @@ function displayValuePlayers(players) {
         </div>
     `;
 }
+
+// Expand game card (used when loading game logs or odds)
+function expandGameCard(gameCard) {
+    if (!gameCard) return;
+    
+    const lineupsSection = gameCard.querySelector('.lineups-section');
+    const expandButton = gameCard.querySelector('.expand-toggle-btn');
+    const expandIcon = expandButton ? expandButton.querySelector('.expand-icon') : null;
+    
+    if (lineupsSection) {
+        lineupsSection.classList.remove('collapsed');
+    }
+    
+    if (expandIcon) {
+        expandIcon.textContent = '▲';
+    }
+}
+
+// Toggle game card expand/collapse
+window.toggleGameCard = function(buttonElement) {
+    const gameCard = buttonElement.closest('.game-card');
+    if (!gameCard) return;
+    
+    const lineupsSection = gameCard.querySelector('.lineups-section');
+    const expandIcon = buttonElement.querySelector('.expand-icon');
+    const actionsSection = gameCard.querySelector('.actions-section');
+    
+    if (!lineupsSection) return;
+    
+    // Toggle collapsed class
+    const isCollapsed = lineupsSection.classList.contains('collapsed');
+    
+    if (isCollapsed) {
+        // Expand
+        lineupsSection.classList.remove('collapsed');
+        if (expandIcon) {
+            expandIcon.textContent = '▲';
+        }
+        // Show actions section if it exists
+        if (actionsSection) {
+            actionsSection.style.display = '';
+        }
+    } else {
+        // Collapse
+        lineupsSection.classList.add('collapsed');
+        if (expandIcon) {
+            expandIcon.textContent = '▼';
+        }
+    }
+};
 
 // Check schedule and load games on page load
 window.addEventListener('DOMContentLoaded', () => {

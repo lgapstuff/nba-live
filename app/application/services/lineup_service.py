@@ -589,11 +589,16 @@ class LineupService:
                             
                             logger.info(f"[ENRICH] Processing STARTER {player_name} (Using ID: {player_id_to_use}, Position: {position}, Points Line: {player.get('points_line')})")
                             try:
+                                # Use local-only mode to avoid NBA API calls when just loading lineups
+                                # Game logs should be loaded separately using the "Cargar Game Logs" button
                                 over_under_history = self.player_stats_service.calculate_over_under_history(
                                     player_id=player_id_to_use,
                                     points_line=player['points_line'],
                                     num_games=25,
-                                    player_name=player_name
+                                    player_name=player_name,
+                                    use_local_only=True,  # Only use local game logs, don't call NBA API
+                                    assists_line=player.get('assists_line'),
+                                    rebounds_line=player.get('rebounds_line')
                                 )
                                 # Only assign over_under_history if we have valid game logs (total_games > 0)
                                 if over_under_history.get('total_games', 0) > 0:
@@ -624,11 +629,16 @@ class LineupService:
                                 player_id_to_use = official_nba_id if official_nba_id else player_id
                                 
                                 try:
+                                    # Use local-only mode to avoid NBA API calls when just loading lineups
+                                    # Game logs should be loaded separately using the "Cargar Game Logs" button
                                     over_under_history = self.player_stats_service.calculate_over_under_history(
                                         player_id=player_id_to_use,
                                         points_line=player['points_line'],
                                         num_games=25,
-                                        player_name=player_name
+                                        player_name=player_name,
+                                        use_local_only=True,  # Only use local game logs, don't call NBA API
+                                        assists_line=player.get('assists_line'),
+                                        rebounds_line=player.get('rebounds_line')
                                     )
                                     # Only assign over_under_history if we have valid game logs (total_games > 0)
                                     if over_under_history.get('total_games', 0) > 0:

@@ -351,4 +351,139 @@ class DepthChartService:
         except Exception as e:
             logger.error(f"Error checking depth charts: {e}")
             return False
+    
+    def team_has_roster(self, team_abbr: str, season: Optional[int] = None) -> bool:
+        """
+        Check if a specific team has a roster in the database.
+        
+        Args:
+            team_abbr: Team abbreviation
+            season: Season year (optional, checks latest if not provided)
+        
+        Returns:
+            True if team has roster, False otherwise
+        """
+        try:
+            players = self.get_players_by_team(team_abbr, season)
+            return len(players) > 0
+        except Exception as e:
+            logger.error(f"Error checking roster for team {team_abbr}: {e}")
+            return False
+    
+    def import_rosters_for_teams(self, team_abbrs: List[str], season: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Import rosters from NBA API for specific teams only.
+        Skips teams that already have rosters in the database.
+        
+        Args:
+            team_abbrs: List of team abbreviations to import
+            season: Season year (e.g., 2024). If None, uses current season.
+            
+        Returns:
+            Dictionary with import results
+        """
+        if not self.nba_api:
+            return {
+                "success": False,
+                "message": "NBA API not available. Please ensure NBA API client is initialized.",
+                "teams_processed": 0,
+                "teams_skipped": 0,
+                "players_saved": 0
+            }
+        
+        try:
+            # Determine season
+            if not season:
+                current_year = datetime.now().year
+                current_month = datetime.now().month
+                if current_month < 10:
+                    season = current_year - 1
+                else:
+                    season = current_year
+            
+            season_str = f"{season}-{str(season + 1)[2:]}"
+            
+            logger.info(f"Importing rosters from NBA API for {len(team_abbrs)} teams (season {season_str})")
+            
+            teams_processed = 0
+            teams_skipped = 0
+            total_players_saved = 0
+            errors = []
+            
+            import time
+            for idx, team_abbr in enumerate(team_abbrs):
+                try:
+                    # Check if team already has roster
+                    if self.team_has_roster(team_abbr, season):
+                        logger.info(f"Team {team_abbr} already has roster in database, skipping...")
+                        teams_skipped += 1
+                        continue
+                    
+                    # Add delay between requests to avoid rate limiting
+                    if idx > 0:
+                        time.sleep(0.5)
+                    
+                    # Get roster from NBA API
+                    logger.info(f"Fetching roster for team {team_abbr} ({idx + 1}/{len(team_abbrs)})...")
+                    nba_players = self.nba_api.get_team_players(team_abbr, season=season_str)
+                    
+                    if not nba_players:
+                        logger.warning(f"No players found for team {team_abbr} from NBA API")
+                        errors.append(f"No players found for team {team_abbr}")
+                        continue
+                    
+                    # Convert NBA API format to depth chart format
+                    depth_chart_format = {}
+                    
+                    for player in nba_players:
+                        position = player.get('position', 'BENCH')
+                        if position not in depth_chart_format:
+                            depth_chart_format[position] = []
+                        
+                        depth_chart_format[position].append({
+                            'playerId': player.get('id'),
+                            'name': player.get('full_name', ''),
+                            'depth': len(depth_chart_format[position]) + 1,
+                            'team': team_abbr
+                        })
+                    
+                    # Save depth chart
+                    saved_count = self.lineup_repository.save_depth_chart(
+                        team_abbr=team_abbr,
+                        season=season,
+                        depth_chart=depth_chart_format
+                    )
+                    
+                    total_players_saved += saved_count
+                    teams_processed += 1
+                    logger.info(f"Saved {saved_count} players for team {team_abbr} (season {season}) from NBA API")
+                    
+                except Exception as e:
+                    error_msg = f"Error importing roster for team {team_abbr}: {e}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    continue
+            
+            result = {
+                "success": True,
+                "message": f"Successfully imported rosters for {teams_processed} teams ({teams_skipped} skipped, already exist)",
+                "season": season,
+                "teams_processed": teams_processed,
+                "teams_skipped": teams_skipped,
+                "players_saved": total_players_saved
+            }
+            
+            if errors:
+                result["errors"] = errors
+                result["error_count"] = len(errors)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error importing rosters for teams: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Failed to import rosters: {e}"
+            }
 

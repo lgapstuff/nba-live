@@ -215,6 +215,27 @@ def check_depth_charts():
     return depth_chart_controller.check_depth_charts()
 
 
+@nba_bp.route("/games/<game_id>/rosters", methods=["POST"])
+def import_rosters_for_game(game_id: str):
+    """
+    Import rosters for teams in a specific game.
+    Only loads rosters that don't already exist in the database.
+    
+    Path parameters:
+        game_id: Game identifier
+    
+    Returns:
+        JSON with import results
+    """
+    if not depth_chart_controller:
+        return {
+            "success": False,
+            "message": "Depth chart service not available."
+        }, 503
+    
+    return depth_chart_controller.import_rosters_for_game(game_id)
+
+
 @nba_bp.route("/games/<game_id>/game-logs", methods=["POST"])
 def load_game_logs(game_id: str):
     """
@@ -236,11 +257,37 @@ def load_game_logs(game_id: str):
     return game_log_controller.load_game_logs_for_event(game_id)
 
 
+@nba_bp.route("/players/<int:player_id>/game-logs/load", methods=["POST"])
+def load_player_game_logs(player_id: int):
+    """
+    Load game logs for a specific player from NBA API and save to database.
+    
+    Path parameters:
+        player_id: NBA player ID
+    
+    Query parameters:
+        player_name: Player name (optional, for logging)
+        num_games: Number of games to load (default: 25)
+    
+    Returns:
+        JSON with loading results
+    """
+    if not game_log_controller:
+        return {
+            "success": False,
+            "message": "Game log service not available. NBA API client not initialized."
+        }, 503
+    
+    player_name = request.args.get('player_name')
+    num_games = int(request.args.get('num_games', 25))
+    return game_log_controller.load_player_game_logs(player_id, player_name, num_games)
+
+
 @nba_bp.route("/players/<int:player_id>/game-logs", methods=["GET"])
 def get_player_game_logs(player_id: int):
     """
-    Get game logs for a specific player (lazy loading).
-    If not in database, loads from NBA API and saves them.
+    Get game logs for a specific player from database only.
+    Does NOT load from NBA API. Use POST /players/<player_id>/game-logs/load to pre-load.
     
     Path parameters:
         player_id: NBA player ID
@@ -249,7 +296,7 @@ def get_player_game_logs(player_id: int):
         player_name: Player name (optional, for logging)
     
     Returns:
-        JSON with game logs (last 25 games)
+        JSON with game logs (last 25 games from database)
     """
     if not game_log_controller:
         return {
