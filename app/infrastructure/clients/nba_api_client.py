@@ -203,20 +203,22 @@ class NBAClient(NBAPort):
             logger.error(f"[NBA API] REQUEST ERROR: Error fetching team players for {team_abbr}: {e}")
             return []
     
-    def get_live_boxscore(self, game_id: str, player_ids: List[int]) -> Dict[str, Any]:
+    def get_live_boxscore(self, game_id: str, player_ids: Optional[List[int]] = None) -> Any:
         """
         Get live boxscore statistics for specific players in a game.
         
         Args:
             game_id: NBA GameID (format: "0022400123" where 00224 is season, 00123 is game number)
-            player_ids: List of NBA player IDs to get statistics for
+            player_ids: Optional list of NBA player IDs to get statistics for
             
         Returns:
             Dictionary with live statistics for each player
         """
         try:
             url = f"{self.service_url}/api/v1/games/{game_id}/boxscore"
-            params = {'player_ids': ','.join(map(str, player_ids))}
+            params = None
+            if player_ids:
+                params = {'player_ids': ','.join(map(str, player_ids))}
             
             logger.info(f"[NBA API SERVICE] REQUEST: Fetching live boxscore for game {game_id}")
             response = requests.get(url, params=params, timeout=30)

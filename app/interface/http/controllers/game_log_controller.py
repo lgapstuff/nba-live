@@ -2,6 +2,7 @@
 Game log controller for NBA game log endpoints.
 """
 import logging
+from datetime import datetime
 from flask import jsonify, request
 from typing import Dict, Any, Tuple
 
@@ -89,6 +90,20 @@ class GameLogController:
         """
         try:
             logger.info(f"Loading game logs for player {player_id} ({player_name or 'Unknown'})")
+
+            # Check latest saved game log date to avoid unnecessary API calls
+            latest_date = self.game_log_service.game_log_repository.get_latest_game_date(player_id)
+            today = datetime.now().date()
+            if latest_date and latest_date == today:
+                return jsonify({
+                    "success": True,
+                    "player_id": player_id,
+                    "player_name": player_name,
+                    "games_loaded": 0,
+                    "total_games": 0,
+                    "already_up_to_date": True,
+                    "latest_game_date": str(latest_date)
+                }), 200
             
             # Load from NBA API with timeout protection
             import threading
@@ -159,7 +174,8 @@ class GameLogController:
                         "player_id": player_id,
                         "player_name": player_name,
                         "games_loaded": saved_count,
-                        "total_games": len(games)
+                        "total_games": len(games),
+                        "already_up_to_date": False
                     }), 200
                 else:
                     logger.warning(f"No games found in NBA API for player {player_id}")

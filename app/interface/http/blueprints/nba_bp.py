@@ -1,7 +1,8 @@
 """
 NBA endpoints blueprint.
 """
-from flask import Blueprint, request
+from flask import Blueprint, request, jsonify
+import requests
 
 from app.config.settings import Config
 from app.infrastructure.database.connection import DatabaseConnection
@@ -59,7 +60,14 @@ depth_chart_service = DepthChartService(
     nba_api_port=nba_client,  # Use NBA API for rosters
     fantasynerds_port=fantasynerds_client  # Keep for backward compatibility
 )
-lineup_service = LineupService(fantasynerds_client, lineup_repository, game_repository, depth_chart_service, player_stats_service)
+lineup_service = LineupService(
+    fantasynerds_client,
+    lineup_repository,
+    game_repository,
+    depth_chart_service,
+    player_stats_service,
+    game_log_repository
+)
 odds_service = OddsService(odds_api_client, lineup_repository, game_repository, depth_chart_service, player_stats_service, odds_history_repository)
 schedule_controller = ScheduleController(schedule_service, depth_chart_service)
 lineup_controller = LineupController(lineup_service, odds_service)
@@ -362,6 +370,85 @@ def get_live_player_stats(game_id: str):
         }), 503
     
     return game_log_controller.get_live_player_stats(game_id)
+
+
+@nba_bp.route("/nba-games/<nba_game_id>/boxscore", methods=["GET"])
+def get_nba_game_boxscore(nba_game_id: str):
+    """
+    Get full boxscore for an NBA game (by NBA Game_ID).
+    
+    Path parameters:
+        nba_game_id: NBA Game_ID (e.g., "0022500556")
+    
+    Query parameters (optional):
+        player_ids: Comma-separated NBA player IDs to filter boxscore
+    
+    Returns:
+        JSON with boxscore data (includes START_POSITION when available)
+    """
+    if not nba_client:
+        return {
+            "success": False,
+            "message": "NBA API client not available."
+        }, 503
+    
+    player_ids_str = request.args.get('player_ids')
+    player_ids = None
+    if player_ids_str:
+        player_ids = [int(pid) for pid in player_ids_str.split(',') if pid.strip()]
+    
+    boxscore = nba_client.get_live_boxscore(nba_game_id, player_ids)
+    if not boxscore:
+        return {
+            "success": False,
+            "message": f"No boxscore available for NBA game {nba_game_id}",
+            "nba_game_id": nba_game_id
+        }, 404
+    
+    return {
+        "success": True,
+        "nba_game_id": nba_game_id,
+        "boxscore": boxscore,
+        "filtered": bool(player_ids)
+    }
+
+
+@nba_bp.route("/cdn/scoreboard/today", methods=["GET"])
+def get_cdn_scoreboard():
+    """
+    Get today's live scoreboard from NBA CDN (via NBA API microservice).
+    """
+    try:
+        url = f"{config.NBA_API_SERVICE_URL}/api/v1/cdn/scoreboard/today"
+        response = requests.get(url, timeout=10)
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching CDN scoreboard: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@nba_bp.route("/cdn/boxscore/<game_id>", methods=["GET"])
+def get_cdn_boxscore(game_id: str):
+    """
+    Get live boxscore from NBA CDN (via NBA API microservice).
+    """
+    try:
+        url = f"{config.NBA_API_SERVICE_URL}/api/v1/cdn/boxscore/{game_id}"
+        response = requests.get(url, timeout=10)
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching CDN boxscore: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 @nba_bp.route("/players/<int:player_id>/odds-history", methods=["GET"])

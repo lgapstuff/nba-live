@@ -25,7 +25,8 @@ class LineupService:
                  lineup_repository: LineupRepository,
                  game_repository: GameRepository,
                  depth_chart_service: DepthChartService = None,
-                 player_stats_service: PlayerStatsService = None):
+                 player_stats_service: PlayerStatsService = None,
+                 game_log_repository=None):
         """
         Initialize the service.
         
@@ -41,6 +42,49 @@ class LineupService:
         self.depth_chart_service = depth_chart_service
         self.player_stats_service = player_stats_service
         self.game_repository = game_repository
+        self.game_log_repository = game_log_repository
+
+    def _update_game_log_lineup_info(self, player_id: int, lineup_date: str,
+                                     start_position: Optional[str],
+                                     starter_status: str) -> None:
+        if not self.game_log_repository:
+            return
+        try:
+            self.game_log_repository.update_game_log_lineup_info(
+                player_id=player_id,
+                game_date=lineup_date,
+                start_position=start_position,
+                starter_status=starter_status
+            )
+        except Exception as e:
+            logger.warning(f"[LINEUP] Could not update game log for player {player_id} on {lineup_date}: {e}")
+
+    def ensure_lineups_for_dates(self, dates: List[str]) -> Dict[str, Any]:
+        """
+        Ensure lineups exist in DB for given dates.
+        Only fetches from FantasyNerds when missing.
+        """
+        results = {
+            "requested": len(dates),
+            "fetched": 0,
+            "skipped": 0,
+            "errors": []
+        }
+
+        for date in dates:
+            try:
+                if self.lineup_repository.has_lineups_for_date(date):
+                    results["skipped"] += 1
+                    continue
+                import_result = self.import_lineups_for_date(date)
+                if import_result.get("success"):
+                    results["fetched"] += 1
+                else:
+                    results["errors"].append(import_result.get("message", f"Failed to import lineups for {date}"))
+            except Exception as e:
+                results["errors"].append(str(e))
+
+        return results
     
     def import_lineups_for_date(self, date: str) -> Dict[str, Any]:
         """
@@ -286,6 +330,7 @@ class LineupService:
         """
         # Get lineups from database
         lineups = self.lineup_repository.get_lineups_by_date(date)
+        lineups = [game for game in lineups if not self._is_game_finished(game)]
         
         # If no lineups found and auto_fetch is enabled, try to fetch from FantasyNerds
         if not lineups and auto_fetch:
@@ -306,6 +351,15 @@ class LineupService:
             lineups = self._enrich_lineups_with_over_under_history(lineups)
         
         return lineups
+
+    @staticmethod
+    def _is_game_finished(game: Dict[str, Any]) -> bool:
+        if not game:
+            return False
+        if str(game.get('game_completed', 0)) in ('1', 'True', 'true'):
+            return True
+        status = str(game.get('status', '')).strip().lower()
+        return status in {'finished', 'final', 'completed', 'complete', 'terminado', 'finalizado'}
     
     def get_lineup_by_game_id(self, game_id: str, auto_fetch: bool = True) -> Optional[Dict[str, Any]]:
         """
@@ -458,6 +512,12 @@ class LineupService:
                                 player_name=player_name,
                                 player_photo_url=player.get('player_photo_url')
                             )
+                            self._update_game_log_lineup_info(
+                                player_id=player_id,
+                                lineup_date=date,
+                                start_position='BENCH',
+                                starter_status='BENCH'
+                            )
                             game_players_saved += 1
                         except Exception as e:
                             logger.error(f"Error saving BENCH player {player_name} for team {team_abbr}: {e}")
@@ -516,11 +576,24 @@ class LineupService:
         """
         if not self.depth_chart_service:
             # Fallback to old behavior if depth chart service is not available
-            return self.lineup_repository.save_lineups_for_game(
+            saved_count = self.lineup_repository.save_lineups_for_game(
                 game_id=game_id,
                 lineup_date=lineup_date,
                 team_lineups=team_lineups
             )
+            # Update game logs for starters from lineup data (no bench info available here)
+            for team_abbr, positions in team_lineups.items():
+                for position, player_data in positions.items():
+                    if position in ['PG', 'SG', 'SF', 'PF', 'C']:
+                        player_id = int(player_data.get('playerId', 0))
+                        if player_id:
+                            self._update_game_log_lineup_info(
+                                player_id=player_id,
+                                lineup_date=lineup_date,
+                                start_position=position,
+                                starter_status='STARTER'
+                            )
+            return saved_count
         
         saved_count = 0
         
@@ -622,6 +695,12 @@ class LineupService:
                             player_status='STARTER',
                             player_photo_url=player_photo_url
                         )
+                        self._update_game_log_lineup_info(
+                            player_id=player_id,
+                            lineup_date=lineup_date,
+                            start_position=position,
+                            starter_status='STARTER'
+                        )
                         saved_count += 1
                         logger.debug(f"[LINEUP] Successfully saved STARTER {player_name} for {team_abbr}")
                     except Exception as e:
@@ -651,6 +730,12 @@ class LineupService:
                             player_id=nba_player_id,  # Official NBA ID
                             player_name=player_name,
                             player_photo_url=nba_player.get('player_photo_url')
+                        )
+                        self._update_game_log_lineup_info(
+                            player_id=nba_player_id,
+                            lineup_date=lineup_date,
+                            start_position='BENCH',
+                            starter_status='BENCH'
                         )
                         saved_count += 1
                     except Exception as e:

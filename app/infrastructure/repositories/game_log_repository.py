@@ -2,6 +2,7 @@
 Repository for player game logs operations.
 """
 import logging
+import unicodedata
 import json
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -89,6 +90,27 @@ class GameLogRepository:
                         points = game.get('PTS', game.get('pts'))
                         minutes = game.get('MIN', game.get('min'))
                         
+                        start_position = game.get('START_POSITION', game.get('start_position'))
+                        if isinstance(start_position, str):
+                            start_position = start_position.strip()
+                            if start_position == '':
+                                start_position = None
+
+                        starter_status = None
+                        if start_position:
+                            starter_status = 'STARTER'
+
+                        # Try to hydrate starter info from saved lineups (same date)
+                        lineup_info = self.get_lineup_info_for_player_date(player_id, game_date)
+                        if not lineup_info and player_name:
+                            lineup_info = self.get_lineup_info_for_player_name_date(player_name, game_date)
+                        if lineup_info:
+                            if lineup_info.get('start_position'):
+                                start_position = lineup_info.get('start_position')
+                                starter_status = lineup_info.get('starter_status')
+                            elif lineup_info.get('starter_status') and not starter_status:
+                                starter_status = lineup_info.get('starter_status')
+
                         # Extract other stats
                         fgm = game.get('FGM', game.get('fgm'))
                         fga = game.get('FGA', game.get('fga'))
@@ -132,7 +154,7 @@ class GameLogRepository:
                         cursor.execute("""
                             INSERT INTO player_game_logs (
                                 player_id, player_name, game_date, matchup,
-                                points, minutes_played,
+                                points, minutes_played, start_position, starter_status,
                                 field_goals_made, field_goals_attempted,
                                 three_pointers_made, three_pointers_attempted,
                                 free_throws_made, free_throws_attempted,
@@ -141,13 +163,16 @@ class GameLogRepository:
                                 game_data
                             ) VALUES (
                                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s
                             )
                             ON DUPLICATE KEY UPDATE
                                 player_name = VALUES(player_name),
                                 matchup = VALUES(matchup),
                                 points = VALUES(points),
                                 minutes_played = VALUES(minutes_played),
+                                start_position = COALESCE(VALUES(start_position), start_position),
+                                starter_status = COALESCE(VALUES(starter_status), starter_status),
                                 field_goals_made = VALUES(field_goals_made),
                                 field_goals_attempted = VALUES(field_goals_attempted),
                                 three_pointers_made = VALUES(three_pointers_made),
@@ -165,7 +190,7 @@ class GameLogRepository:
                                 updated_at = CURRENT_TIMESTAMP
                         """, (
                             player_id, player_name, game_date, matchup,
-                            points_float, minutes_float,
+                            points_float, minutes_float, start_position, starter_status,
                             fgm, fga, fg3m, fg3a, ftm, fta,
                             reb, ast, stl, blk, tov, pf, plus_minus,
                             game_data_json
@@ -184,6 +209,93 @@ class GameLogRepository:
                 conn.commit()
                 
                 return saved_count
+
+    def get_lineup_info_for_player_date(self, player_id: int, game_date) -> Optional[Dict[str, Any]]:
+        """
+        Get starter status/position from saved lineups for a player on a specific date.
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT position, player_status
+                    FROM game_lineups
+                    WHERE player_id = %s
+                      AND lineup_date = %s
+                    LIMIT 1
+                """, (player_id, game_date))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+
+                position = row.get('position')
+                player_status = row.get('player_status')
+
+                start_position = None
+                starter_status = None
+                if player_status:
+                    starter_status = player_status
+                if position and not str(position).startswith('BENCH'):
+                    start_position = position
+                    if not starter_status:
+                        starter_status = 'STARTER'
+                elif position and str(position).startswith('BENCH') and not starter_status:
+                    starter_status = 'BENCH'
+
+                return {
+                    'start_position': start_position,
+                    'starter_status': starter_status
+                }
+
+    def get_lineup_info_for_player_name_date(self, player_name: str, game_date) -> Optional[Dict[str, Any]]:
+        """
+        Fallback: get starter status/position by player name and date.
+        """
+        def normalize_name(name: str) -> str:
+            if not name:
+                return ""
+            normalized = unicodedata.normalize('NFD', name)
+            normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+            return normalized.lower().strip()
+
+        target_name = normalize_name(player_name)
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT player_name, position, player_status
+                    FROM game_lineups
+                    WHERE lineup_date = %s
+                """, (game_date,))
+                rows = cursor.fetchall()
+                if not rows:
+                    return None
+
+                matched_row = None
+                for row in rows:
+                    if normalize_name(row.get('player_name')) == target_name:
+                        matched_row = row
+                        break
+
+                if not matched_row:
+                    return None
+
+                position = matched_row.get('position')
+                player_status = matched_row.get('player_status')
+
+                start_position = None
+                starter_status = None
+                if player_status:
+                    starter_status = player_status
+                if position and not str(position).startswith('BENCH'):
+                    start_position = position
+                    if not starter_status:
+                        starter_status = 'STARTER'
+                elif position and str(position).startswith('BENCH') and not starter_status:
+                    starter_status = 'BENCH'
+
+                return {
+                    'start_position': start_position,
+                    'starter_status': starter_status
+                }
     
     def _cleanup_old_games(self, cursor, player_id: int, keep_count: int = 25) -> None:
         """
@@ -227,7 +339,7 @@ class GameLogRepository:
                     cursor.execute("""
                         SELECT 
                             player_id, player_name, game_date, matchup,
-                            points, minutes_played,
+                            points, minutes_played, start_position, starter_status,
                             field_goals_made, field_goals_attempted,
                             three_pointers_made, three_pointers_attempted,
                             free_throws_made, free_throws_attempted,
@@ -243,7 +355,7 @@ class GameLogRepository:
                     cursor.execute("""
                         SELECT 
                             player_id, player_name, game_date, matchup,
-                            points, minutes_played,
+                            points, minutes_played, start_position, starter_status,
                             field_goals_made, field_goals_attempted,
                             three_pointers_made, three_pointers_attempted,
                             free_throws_made, free_throws_attempted,
@@ -257,8 +369,44 @@ class GameLogRepository:
                 
                 rows = cursor.fetchall()
                 
-                return [
-                    {
+                results = []
+                for row in rows:
+                    game_data = json.loads(row['game_data']) if row.get('game_data') else None
+                    start_position = row.get('start_position')
+                    starter_status = row.get('starter_status')
+
+                    if not start_position and not starter_status and isinstance(game_data, dict):
+                        if 'START_POSITION' in game_data:
+                            raw_position = game_data.get('START_POSITION')
+                        elif 'start_position' in game_data:
+                            raw_position = game_data.get('start_position')
+                        else:
+                            raw_position = None
+
+                        if raw_position is not None:
+                            start_position = str(raw_position).strip()
+                            if start_position == '':
+                                start_position = None
+                                starter_status = 'BENCH'
+                            else:
+                                starter_status = 'STARTER'
+
+                        if starter_status is None:
+                            starter_flag = None
+                            if 'STARTER' in game_data:
+                                starter_flag = game_data.get('STARTER')
+                            elif 'starter' in game_data:
+                                starter_flag = game_data.get('starter')
+
+                            if starter_flag is not None:
+                                if isinstance(starter_flag, str):
+                                    starter_flag = starter_flag.strip()
+                                if starter_flag in (1, '1', True, 'true', 'TRUE', 'Y', 'Yes'):
+                                    starter_status = 'STARTER'
+                                elif starter_flag in (0, '0', False, 'false', 'FALSE', 'N', 'No'):
+                                    starter_status = 'BENCH'
+
+                    results.append({
                         'player_id': row['player_id'],
                         'player_name': row['player_name'],
                         'game_date': row['game_date'],
@@ -278,8 +426,63 @@ class GameLogRepository:
                         'turnovers': row.get('turnovers'),
                         'personal_fouls': row.get('personal_fouls'),
                         'plus_minus': row.get('plus_minus'),
-                        'game_data': json.loads(row['game_data']) if row.get('game_data') else None
-                    }
-                    for row in rows
-                ]
+                        'starter_status': starter_status,
+                        'start_position': start_position,
+                        'game_data': game_data
+                    })
+
+                return results
+
+    def get_latest_game_date(self, player_id: int) -> Optional[datetime]:
+        """
+        Get the most recent game_date for a player.
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT MAX(game_date) AS latest_date
+                    FROM player_game_logs
+                    WHERE player_id = %s
+                """, (player_id,))
+                row = cursor.fetchone()
+                return row.get('latest_date') if row else None
+
+    def update_game_log_lineup_info(self, player_id: int, game_date: str,
+                                    start_position: Optional[str],
+                                    starter_status: Optional[str]) -> None:
+        """
+        Update lineup position/status for a player's game log on a specific date.
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE player_game_logs
+                    SET start_position = %s,
+                        starter_status = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE player_id = %s
+                      AND game_date = %s
+                """, (start_position, starter_status, player_id, game_date))
+                conn.commit()
+
+    def backfill_lineup_info_for_player_dates(self, player_id: int, player_name: Optional[str],
+                                              dates: List[str]) -> int:
+        """
+        Backfill lineup info for existing game logs for given dates.
+        """
+        updated = 0
+        for date in dates:
+            lineup_info = self.get_lineup_info_for_player_date(player_id, date)
+            if not lineup_info and player_name:
+                lineup_info = self.get_lineup_info_for_player_name_date(player_name, date)
+            if not lineup_info:
+                continue
+            self.update_game_log_lineup_info(
+                player_id=player_id,
+                game_date=date,
+                start_position=lineup_info.get('start_position'),
+                starter_status=lineup_info.get('starter_status')
+            )
+            updated += 1
+        return updated
 

@@ -187,6 +187,11 @@ class GameRepository:
                 # Always update completed status
                 updates.append("game_completed = %s")
                 params.append(1 if completed else 0)
+
+                # Mark as finished when completed
+                if completed:
+                    updates.append("status = %s")
+                    params.append("Finished")
                 
                 if last_update:
                     # Convert ISO 8601 format (with Z) to MySQL DATETIME format

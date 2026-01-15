@@ -213,7 +213,7 @@ class OddsService:
             # Log the complete odds data received from The Odds API
             if odds_data:
                 logger.info(f"[ODDS] Game {game_id} - Event {event_id} - Complete odds response from The Odds API:")
-                logger.info(f"[ODDS] Response structure: {json.dumps(odds_data, indent=2, default=str)}")
+                logger.info(f"[ODDS] Event odds response: {json.dumps(odds_data, indent=2, default=str)}")
                 
                 # Also log a summary
                 bookmakers_count = len(odds_data.get('bookmakers', []))
@@ -606,6 +606,7 @@ class OddsService:
             List of matched players with their odds
         """
         matched_players = []
+        matched_lineup_keys = set()
         has_lineup = lineup and 'lineups' in lineup
         
         # Helper function to normalize player names (remove accents)
@@ -951,6 +952,7 @@ class OddsService:
                             rebounds_line=rebounds_line,
                             over_under_history=over_under_history
                         )
+                        matched_lineup_keys.add((matched_starter['team'], matched_starter['player_id']))
                         
                         # Save odds history (only if changed)
                         if self.odds_history_repository and points_line:
@@ -1091,6 +1093,7 @@ class OddsService:
                                     rebounds_line=rebounds_line,
                                     over_under_history=over_under_history
                                 )
+                                matched_lineup_keys.add((team_abbr, player_id))
                             
                             # Save odds history (only if changed)
                             if self.odds_history_repository and points_line:
@@ -1119,6 +1122,42 @@ class OddsService:
                     logger.warning(f"Player {player_name} from odds not found in team rosters (NBA API or depth charts) for game {game_id}")
                     continue
         
+        if has_lineup and game_date:
+            for team_abbr, positions in lineup['lineups'].items():
+                for position, player_data in positions.items():
+                    if position == 'BENCH':
+                        bench_players = player_data if isinstance(player_data, list) else []
+                        for bench_player in bench_players:
+                            bench_player_id = bench_player.get('player_id')
+                            if not bench_player_id:
+                                continue
+                            if (team_abbr, bench_player_id) not in matched_lineup_keys:
+                                self.lineup_repository.update_points_line_for_player(
+                                    game_id=game_id,
+                                    lineup_date=game_date,
+                                    team_abbr=team_abbr,
+                                    player_id=bench_player_id,
+                                    points_line=None,
+                                    assists_line=None,
+                                    rebounds_line=None,
+                                    clear_over_under_history=True
+                                )
+                    else:
+                        player_id = player_data.get('player_id') if isinstance(player_data, dict) else None
+                        if not player_id:
+                            continue
+                        if (team_abbr, player_id) not in matched_lineup_keys:
+                            self.lineup_repository.update_points_line_for_player(
+                                game_id=game_id,
+                                lineup_date=game_date,
+                                team_abbr=team_abbr,
+                                player_id=player_id,
+                                points_line=None,
+                                assists_line=None,
+                                rebounds_line=None,
+                                clear_over_under_history=True
+                            )
+
         return matched_players
     
     def _find_matching_player(self, odds_player_name: str, 

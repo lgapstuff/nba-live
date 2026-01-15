@@ -24,6 +24,15 @@ class OddsAPIClient:
         """
         self.api_key = api_key
         self.base_url = base_url
+
+    @staticmethod
+    def _log_request(method: str, url: str, params: Optional[Dict[str, Any]] = None) -> None:
+        try:
+            req = requests.Request(method=method, url=url, params=params or {})
+            prepared = req.prepare()
+            logger.info(f"[ODDS API] RAW REQUEST: {prepared.method} {prepared.url}")
+        except Exception as e:
+            logger.warning(f"[ODDS API] Could not format request URL: {e}")
     
     def get_events_for_sport(self, sport: str = "basketball_nba") -> List[Dict[str, Any]]:
         """Get events for a specific sport."""
@@ -32,6 +41,7 @@ class OddsAPIClient:
             params = {'apiKey': self.api_key}
             
             logger.info(f"[ODDS API] Fetching events for sport: {sport}")
+            self._log_request("GET", url, params)
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             
@@ -59,6 +69,7 @@ class OddsAPIClient:
             }
             
             logger.info(f"[ODDS API] Fetching player props odds for event {event_id}")
+            self._log_request("GET", url, params)
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             
@@ -117,6 +128,7 @@ class OddsAPIClient:
                 params['eventIds'] = event_ids
             
             logger.info(f"[ODDS API] Fetching scores for sport: {sport}")
+            self._log_request("GET", url, params)
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             

@@ -234,6 +234,8 @@ def create_tables(config: Config) -> None:
                         matchup VARCHAR(50),
                         points DECIMAL(5,1),
                         minutes_played DECIMAL(5,1),
+                        start_position VARCHAR(5) NULL,
+                        starter_status VARCHAR(10) NULL,
                         field_goals_made INT,
                         field_goals_attempted INT,
                         three_pointers_made INT,
@@ -256,6 +258,25 @@ def create_tables(config: Config) -> None:
                         INDEX idx_player_date (player_id, game_date)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """)
+
+                # Add start_position and starter_status columns if they don't exist (migration)
+                try:
+                    cursor.execute("""
+                        ALTER TABLE player_game_logs
+                        ADD COLUMN start_position VARCHAR(5) NULL
+                    """)
+                    logger.info("Added start_position column to player_game_logs")
+                except Exception:
+                    pass
+
+                try:
+                    cursor.execute("""
+                        ALTER TABLE player_game_logs
+                        ADD COLUMN starter_status VARCHAR(10) NULL
+                    """)
+                    logger.info("Added starter_status column to player_game_logs")
+                except Exception:
+                    pass
                 
                 # Create player_odds_history table for storing odds history
                 cursor.execute("""

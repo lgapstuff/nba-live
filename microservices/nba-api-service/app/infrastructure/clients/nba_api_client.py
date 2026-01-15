@@ -192,46 +192,136 @@ class NBAClient:
             logger.error(f"Error fetching team players: {e}")
             return []
     
-    def get_live_boxscore(self, game_id: str, player_ids: List[int]) -> Dict[str, Any]:
-        """Get live boxscore statistics for specific players in a game."""
+    def get_live_boxscore(self, game_id: str, player_ids: Optional[List[int]] = None) -> Any:
+        """Get live boxscore statistics for a game."""
         try:
             boxscore = self.boxscoretraditionalv2.BoxScoreTraditionalV2(game_id=game_id)
             data_frames = boxscore.get_data_frames()
             
             if not data_frames or len(data_frames) == 0:
-                return {}
+                return [] if not player_ids else {}
             
             df = data_frames[0]
             if df.empty:
-                return {}
+                return [] if not player_ids else {}
             
             player_stats = df.to_dict('records')
-            result = {}
-            for stat in player_stats:
-                player_id = stat.get('PLAYER_ID')
-                if player_id and player_id in player_ids:
-                    result[player_id] = {
-                        'PTS': stat.get('PTS', 0),
-                        'AST': stat.get('AST', 0),
-                        'REB': stat.get('REB', 0),
-                        'MIN': stat.get('MIN', '0:00'),
-                        'FGM': stat.get('FGM', 0),
-                        'FGA': stat.get('FGA', 0),
-                        'FG3M': stat.get('FG3M', 0),
-                        'FG3A': stat.get('FG3A', 0),
-                        'FTM': stat.get('FTM', 0),
-                        'FTA': stat.get('FTA', 0),
-                        'TOV': stat.get('TOV', 0),
-                        'STL': stat.get('STL', 0),
-                        'BLK': stat.get('BLK', 0),
-                        'PF': stat.get('PF', 0),
-                        'PLAYER_NAME': stat.get('PLAYER_NAME', '')
-                    }
-            
-            return result
+            if player_ids:
+                result = {}
+                for stat in player_stats:
+                    player_id = stat.get('PLAYER_ID')
+                    if player_id and player_id in player_ids:
+                        result[player_id] = {
+                            'PTS': stat.get('PTS', 0),
+                            'AST': stat.get('AST', 0),
+                            'REB': stat.get('REB', 0),
+                            'MIN': stat.get('MIN', '0:00'),
+                            'FGM': stat.get('FGM', 0),
+                            'FGA': stat.get('FGA', 0),
+                            'FG3M': stat.get('FG3M', 0),
+                            'FG3A': stat.get('FG3A', 0),
+                            'FTM': stat.get('FTM', 0),
+                            'FTA': stat.get('FTA', 0),
+                            'TOV': stat.get('TOV', 0),
+                            'STL': stat.get('STL', 0),
+                            'BLK': stat.get('BLK', 0),
+                            'PF': stat.get('PF', 0),
+                            'PLAYER_NAME': stat.get('PLAYER_NAME', ''),
+                            'START_POSITION': stat.get('START_POSITION'),
+                            'TEAM_ABBREVIATION': stat.get('TEAM_ABBREVIATION', ''),
+                        }
+                return result
+
+            return [
+                {
+                    'PLAYER_ID': stat.get('PLAYER_ID'),
+                    'PLAYER_NAME': stat.get('PLAYER_NAME', ''),
+                    'TEAM_ABBREVIATION': stat.get('TEAM_ABBREVIATION', ''),
+                    'START_POSITION': stat.get('START_POSITION'),
+                    'MIN': stat.get('MIN', '0:00'),
+                    'PTS': stat.get('PTS', 0),
+                    'AST': stat.get('AST', 0),
+                    'REB': stat.get('REB', 0),
+                    'FGM': stat.get('FGM', 0),
+                    'FGA': stat.get('FGA', 0),
+                    'FG3M': stat.get('FG3M', 0),
+                    'FG3A': stat.get('FG3A', 0),
+                    'FTM': stat.get('FTM', 0),
+                    'FTA': stat.get('FTA', 0),
+                    'TOV': stat.get('TOV', 0),
+                    'STL': stat.get('STL', 0),
+                    'BLK': stat.get('BLK', 0),
+                    'PF': stat.get('PF', 0),
+                }
+                for stat in player_stats
+            ]
         except Exception as e:
             logger.error(f"Error fetching live boxscore: {e}")
-            return {}
+            return [] if not player_ids else {}
+
+    def get_game_status(self, game_id: str, game_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Get live game status (period/clock) for a specific NBA GameID.
+        """
+        def to_scoreboard_date(date_str: str) -> Optional[str]:
+            try:
+                date_str = str(date_str).strip()
+                if '-' in date_str and len(date_str) >= 10:
+                    return datetime.strptime(date_str[:10], '%Y-%m-%d').strftime('%m/%d/%Y')
+                if '/' in date_str and len(date_str.split('/')) == 3:
+                    # Already in MM/DD/YYYY
+                    return date_str
+            except Exception:
+                return None
+            return None
+
+        try:
+            from datetime import timedelta, date
+            dates_to_try = []
+            if game_date:
+                scoreboard_date = to_scoreboard_date(game_date)
+                if scoreboard_date:
+                    dates_to_try.append(scoreboard_date)
+            else:
+                today = datetime.now().date()
+                for offset in [0, -1, 1]:
+                    dates_to_try.append((today + timedelta(days=offset)).strftime('%m/%d/%Y'))
+
+            for try_date in dates_to_try:
+                try:
+                    scoreboard = self.scoreboardv2.ScoreboardV2(game_date=try_date)
+                    # Try dict format first
+                    try:
+                        scoreboard_dict = scoreboard.get_dict()
+                        if scoreboard_dict and 'resultSets' in scoreboard_dict:
+                            result_sets = scoreboard_dict.get('resultSets', [])
+                            if result_sets and len(result_sets) > 0:
+                                game_header = result_sets[0]
+                                headers = game_header.get('headers', [])
+                                rows = game_header.get('rowSet', [])
+                                for row in rows:
+                                    row_dict = {headers[i]: row[i] for i in range(min(len(headers), len(row)))}
+                                    if row_dict.get('GAME_ID') == game_id:
+                                        return row_dict
+                    except Exception:
+                        pass
+
+                    # Fallback to dataframe
+                    data_frames = scoreboard.get_data_frames()
+                    if data_frames and len(data_frames) > 0:
+                        df = data_frames[0]
+                        if df is not None and not (hasattr(df, 'empty') and df.empty):
+                            games = df.to_dict('records')
+                            for game in games:
+                                if game.get('GAME_ID') == game_id:
+                                    return game
+                except Exception:
+                    continue
+
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching game status: {e}")
+            return None
     
     def find_nba_game_id(self, home_team_abbr: str, away_team_abbr: str, game_date: str = None) -> Optional[str]:
         """Find NBA GameID by matching teams and date."""

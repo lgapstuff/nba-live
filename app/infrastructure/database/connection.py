@@ -29,24 +29,27 @@ class DatabaseConnection:
         Returns:
             MySQL connection object
         """
-        if self._connection is None or not self._connection.open:
-            self._connection = pymysql.connect(
-                host=self.config.MYSQL_HOST,
-                port=self.config.MYSQL_PORT,
-                user=self.config.MYSQL_USER,
-                password=self.config.MYSQL_PASSWORD,
-                database=self.config.MYSQL_DATABASE,
-                charset='utf8mb4',
-                cursorclass=pymysql.cursors.DictCursor,
-                autocommit=False
-            )
+        # Always create a fresh connection to avoid cross-request reuse
+        self._connection = pymysql.connect(
+            host=self.config.MYSQL_HOST,
+            port=self.config.MYSQL_PORT,
+            user=self.config.MYSQL_USER,
+            password=self.config.MYSQL_PASSWORD,
+            database=self.config.MYSQL_DATABASE,
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=False
+        )
         return self._connection
     
     def close(self) -> None:
         """Close the database connection."""
-        if self._connection and self._connection.open:
-            self._connection.close()
-            self._connection = None
+        if self._connection:
+            try:
+                if self._connection.open:
+                    self._connection.close()
+            finally:
+                self._connection = None
     
     def __enter__(self):
         """Context manager entry."""

@@ -77,25 +77,17 @@ class NBAPort(ABC):
         pass
     
     @abstractmethod
-    def get_live_boxscore(self, game_id: str, player_ids: List[int]) -> Dict[str, Any]:
+    def get_live_boxscore(self, game_id: str, player_ids: Optional[List[int]] = None) -> Any:
         """
         Get live boxscore statistics for specific players in a game.
         
         Args:
             game_id: NBA GameID (format: "0022400123" where 00224 is season, 00123 is game number)
-            player_ids: List of NBA player IDs to get statistics for
+            player_ids: Optional list of NBA player IDs to filter stats
             
         Returns:
-            Dictionary with live statistics for each player:
-            {
-                player_id: {
-                    'PTS': points,
-                    'AST': assists,
-                    'REB': rebounds,
-                    'MIN': minutes,
-                    ...
-                }
-            }
+            If player_ids provided, dictionary with stats per player_id.
+            If omitted, list of player stat dictionaries for the full boxscore.
         """
         pass
 

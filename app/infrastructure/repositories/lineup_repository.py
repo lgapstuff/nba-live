@@ -77,7 +77,8 @@ class LineupRepository:
                                       points_line: Optional[float],
                                       assists_line: Optional[float] = None,
                                       rebounds_line: Optional[float] = None,
-                                      over_under_history: Optional[Dict[str, Any]] = None) -> None:
+                                      over_under_history: Optional[Dict[str, Any]] = None,
+                                      clear_over_under_history: bool = False) -> None:
         """
         Update points_line, assists_line, rebounds_line and optionally over_under_history for a player in the lineup.
         
@@ -94,7 +95,7 @@ class LineupRepository:
         import json
         with self.db.get_connection() as conn:
             with conn.cursor() as cursor:
-                if over_under_history:
+                if over_under_history is not None:
                     over_under_json = json.dumps(over_under_history)
                     cursor.execute("""
                         UPDATE game_lineups
@@ -108,6 +109,20 @@ class LineupRepository:
                           AND team_abbr = %s
                           AND player_id = %s
                     """, (points_line, assists_line, rebounds_line, over_under_json, 
+                          game_id, lineup_date, team_abbr, player_id))
+                elif clear_over_under_history:
+                    cursor.execute("""
+                        UPDATE game_lineups
+                        SET points_line = %s,
+                            assists_line = %s,
+                            rebounds_line = %s,
+                            over_under_history = NULL,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE game_id = %s
+                          AND lineup_date = %s
+                          AND team_abbr = %s
+                          AND player_id = %s
+                    """, (points_line, assists_line, rebounds_line, 
                           game_id, lineup_date, team_abbr, player_id))
                 else:
                     cursor.execute("""
@@ -130,6 +145,20 @@ class LineupRepository:
                     logger.info(f"[LINEUP REPO] Updated {rows_affected} row(s) for player_id={player_id}: PTS={points_line}, AST={assists_line}, REB={rebounds_line}")
                 
                 conn.commit()
+
+    def has_lineups_for_date(self, lineup_date: str) -> bool:
+        """
+        Check if any lineups exist for a given date.
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT 1
+                    FROM game_lineups
+                    WHERE lineup_date = %s
+                    LIMIT 1
+                """, (lineup_date,))
+                return cursor.fetchone() is not None
     
     def save_lineups_for_game(self, game_id: str, lineup_date: str, 
                               team_lineups: Dict[str, Dict[str, Dict[str, Any]]]) -> int:
@@ -264,7 +293,7 @@ class LineupRepository:
                         gl.game_id, gl.team_abbr, gl.position,
                         gl.player_id, gl.player_name, gl.player_photo_url, gl.confirmed, gl.player_status,
                         gl.lineup_date, gl.points_line, gl.assists_line, gl.rebounds_line, gl.over_under_history,
-                        g.home_team, g.away_team, g.game_date, g.game_time,
+                        g.home_team, g.away_team, g.game_date, g.game_time, g.status,
                         g.home_team_name, g.away_team_name,
                         g.home_team_logo_url, g.away_team_logo_url,
                         g.home_score, g.away_score, g.score_last_update, g.game_completed
@@ -292,6 +321,7 @@ class LineupRepository:
                             'game_date': str(row['game_date']) if row['game_date'] else None,
                             'game_time': str(row['game_time']) if row['game_time'] else None,
                             'lineup_date': str(row['lineup_date']) if row['lineup_date'] else None,
+                            'status': row.get('status'),
                             'home_score': row.get('home_score'),
                             'away_score': row.get('away_score'),
                             'score_last_update': str(row['score_last_update']) if row.get('score_last_update') else None,
@@ -368,7 +398,7 @@ class LineupRepository:
                         g.home_team, g.away_team,
                         g.home_team_name, g.away_team_name,
                         g.home_team_logo_url, g.away_team_logo_url,
-                        g.game_date, g.game_time,
+                        g.game_date, g.game_time, g.status,
                         g.home_score, g.away_score, g.score_last_update, g.game_completed
                     FROM game_lineups gl
                     JOIN games g ON gl.game_id = g.game_id
@@ -394,6 +424,7 @@ class LineupRepository:
                     'game_date': str(first_row['game_date']) if first_row['game_date'] else None,
                     'game_time': str(first_row['game_time']) if first_row['game_time'] else None,
                     'lineup_date': str(first_row['lineup_date']) if first_row['lineup_date'] else None,
+                    'status': first_row.get('status'),
                     'home_score': first_row.get('home_score'),
                     'away_score': first_row.get('away_score'),
                     'score_last_update': str(first_row['score_last_update']) if first_row.get('score_last_update') else None,

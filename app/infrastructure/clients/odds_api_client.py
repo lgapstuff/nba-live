@@ -25,6 +25,15 @@ class OddsAPIClient(OddsAPIPort):
             service_url: Base URL for the Odds API microservice
         """
         self.service_url = service_url.rstrip('/')
+
+    @staticmethod
+    def _log_request(method: str, url: str, params: Optional[Dict[str, Any]] = None) -> None:
+        try:
+            req = requests.Request(method=method, url=url, params=params)
+            prepared = req.prepare()
+            logger.info(f"[ODDS API SERVICE] RAW REQUEST: {prepared.method} {prepared.url}")
+        except Exception as e:
+            logger.warning(f"[ODDS API SERVICE] Could not format request URL: {e}")
     
     def get_events_for_sport(self, sport: str = "basketball_nba") -> List[Dict[str, Any]]:
         """
@@ -41,6 +50,7 @@ class OddsAPIClient(OddsAPIPort):
             params = {'sport': sport}
             
             logger.info(f"[ODDS API SERVICE] REQUEST: Fetching events for sport: {sport}")
+            self._log_request("GET", url, params)
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             
@@ -87,6 +97,7 @@ class OddsAPIClient(OddsAPIPort):
             }
             
             logger.info(f"[ODDS API SERVICE] REQUEST: Fetching player props odds for event {event_id}")
+            self._log_request("GET", url, params)
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             
@@ -128,6 +139,7 @@ class OddsAPIClient(OddsAPIPort):
                 params['event_ids'] = event_ids
             
             logger.info(f"[ODDS API SERVICE] REQUEST: Fetching scores for sport: {sport}")
+            self._log_request("GET", url, params)
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             

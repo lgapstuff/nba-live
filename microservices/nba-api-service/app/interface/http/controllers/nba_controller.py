@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 from typing import List
 
 from app.infrastructure.clients.nba_api_client import NBAClient
+from app.infrastructure.clients.nba_cdn_client import NBACdnClient
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 def create_nba_controller(client: NBAClient) -> Blueprint:
     """Create and configure the NBA API controller blueprint."""
     bp = Blueprint("nba", __name__, url_prefix="/api/v1")
+    cdn_client = NBACdnClient()
     
     @bp.route("/health", methods=["GET"])
     def health():
@@ -108,21 +110,42 @@ def create_nba_controller(client: NBAClient) -> Blueprint:
         """Get live boxscore for a game."""
         try:
             player_ids_str = request.args.get('player_ids')
-            if not player_ids_str:
-                return jsonify({
-                    "success": False,
-                    "error": "player_ids parameter is required"
-                }), 400
-            
-            player_ids = [int(pid) for pid in player_ids_str.split(',')]
+            player_ids = None
+            if player_ids_str:
+                player_ids = [int(pid) for pid in player_ids_str.split(',') if pid.strip()]
             boxscore = client.get_live_boxscore(game_id, player_ids)
             return jsonify({
                 "success": True,
                 "game_id": game_id,
-                "boxscore": boxscore
+                "boxscore": boxscore,
+                "filtered": bool(player_ids)
             })
         except Exception as e:
             logger.error(f"Error fetching boxscore: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
+
+    @bp.route("/games/<game_id>/status", methods=["GET"])
+    def get_game_status(game_id: str):
+        """Get live status for a game (period/clock)."""
+        try:
+            game_date = request.args.get('game_date')  # YYYY-MM-DD optional
+            status = client.get_game_status(game_id, game_date)
+            if not status:
+                return jsonify({
+                    "success": False,
+                    "game_id": game_id,
+                    "message": "No live status found for game"
+                }), 404
+            return jsonify({
+                "success": True,
+                "game_id": game_id,
+                "status": status
+            })
+        except Exception as e:
+            logger.error(f"Error fetching game status: {e}", exc_info=True)
             return jsonify({
                 "success": False,
                 "error": str(e)
@@ -152,6 +175,40 @@ def create_nba_controller(client: NBAClient) -> Blueprint:
             })
         except Exception as e:
             logger.error(f"Error finding game ID: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
+
+    @bp.route("/cdn/scoreboard/today", methods=["GET"])
+    def get_cdn_scoreboard():
+        """Get today's live scoreboard from NBA CDN."""
+        try:
+            data = cdn_client.get_todays_scoreboard()
+            return jsonify({
+                "success": True,
+                "scoreboard": data
+            })
+        except Exception as e:
+            logger.error(f"Error fetching CDN scoreboard: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
+
+    @bp.route("/cdn/boxscore/<game_id>", methods=["GET"])
+    def get_cdn_boxscore(game_id: str):
+        """Get live boxscore from NBA CDN for a specific game."""
+        try:
+            cache_bust = request.args.get('t')
+            data = cdn_client.get_boxscore(game_id, cache_bust=cache_bust)
+            return jsonify({
+                "success": True,
+                "game_id": game_id,
+                "boxscore": data
+            })
+        except Exception as e:
+            logger.error(f"Error fetching CDN boxscore: {e}", exc_info=True)
             return jsonify({
                 "success": False,
                 "error": str(e)

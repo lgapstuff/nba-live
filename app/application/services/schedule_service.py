@@ -104,7 +104,17 @@ class ScheduleService:
         Returns:
             List of game dictionaries
         """
-        return self.game_repository.get_games_by_date(date)
+        games = self.game_repository.get_games_by_date(date)
+        return [game for game in games if not self._is_game_finished(game)]
+
+    @staticmethod
+    def _is_game_finished(game: Dict[str, Any]) -> bool:
+        if not game:
+            return False
+        if str(game.get('game_completed', 0)) in ('1', 'True', 'true'):
+            return True
+        status = str(game.get('status', '')).strip().lower()
+        return status in {'finished', 'final', 'completed', 'complete', 'terminado', 'finalizado'}
     
     def _normalize_schedule_data(self, data: Any) -> List[Dict[str, Any]]:
         """
