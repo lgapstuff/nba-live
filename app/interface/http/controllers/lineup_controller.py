@@ -169,3 +169,51 @@ class LineupController:
                 "message": f"Internal server error: {str(e)}"
             }), 500
 
+    def get_lineup_by_teams(self, home_team: str, away_team: str, date: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
+        """
+        Get lineup for a game identified by team abbreviations.
+
+        Args:
+            home_team: Home team abbreviation
+            away_team: Away team abbreviation
+            date: Optional date in YYYY-MM-DD format
+
+        Returns:
+            JSON response and status code
+        """
+        try:
+            resolved = self.lineup_service.get_lineup_by_teams(home_team, away_team, date)
+
+            if not resolved:
+                return jsonify({
+                    "success": True,
+                    "lineup": [],
+                    "message": "No game found for the specified matchup"
+                }), 200
+
+            game = resolved.get("game")
+            lineup = resolved.get("lineup")
+
+            if not lineup:
+                return jsonify({
+                    "success": True,
+                    "game_id": game.get("game_id") if game else None,
+                    "lineup": [],
+                    "message": "No lineup found for the specified matchup"
+                }), 200
+
+            return jsonify({
+                "success": True,
+                "home_team": home_team,
+                "away_team": away_team,
+                "game_id": game.get("game_id") if game else None,
+                "lineup": lineup
+            }), 200
+
+        except Exception as e:
+            logger.error(f"Error in get_lineup_by_teams: {e}")
+            return jsonify({
+                "success": False,
+                "message": f"Internal server error: {str(e)}"
+            }), 500
+

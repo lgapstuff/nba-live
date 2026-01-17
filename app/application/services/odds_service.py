@@ -658,19 +658,19 @@ class OddsService:
             logger.warning(f"Cannot determine date for saving odds players in game {game_id}")
         
         # Extract unique players from odds (to avoid duplicates)
-        # Only process FanDuel bookmaker
         odds_players_map = {}
         bookmakers = odds_data.get('bookmakers', [])
+        has_fanduel = any(b.get('key', '').lower() == 'fanduel' for b in bookmakers)
         
         for bookmaker in bookmakers:
-            # Only process FanDuel
-            if bookmaker.get('key', '').lower() != 'fanduel':
-                logger.debug(f"Skipping bookmaker {bookmaker.get('key')} - only processing FanDuel")
+            bookmaker_key = bookmaker.get('key', '').lower()
+            if has_fanduel and bookmaker_key != 'fanduel':
+                logger.debug(f"Skipping bookmaker {bookmaker.get('key')} - FanDuel available")
                 continue
             
             markets = bookmaker.get('markets', [])
             market_keys = [m.get('key') for m in markets]
-            logger.info(f"[ODDS] Available markets in FanDuel: {market_keys}")
+            logger.info(f"[ODDS] Available markets in {bookmaker.get('key')}: {market_keys}")
             
             # First pass: collect all outcomes by player and market
             player_markets_data = {}  # player_name_lower -> {player_points: {...}, player_assists: {...}, player_rebounds: {...}}
@@ -925,7 +925,7 @@ class OddsService:
                                 over_under_history = self.player_stats_service.calculate_over_under_history(
                                     player_id=player_id_to_use,
                                     points_line=points_line,
-                                    num_games=25,
+                                    num_games=15,
                                     player_name=matched_starter['player_name'],
                                     use_local_only=True,  # Only use local game logs, no NBA API calls
                                     assists_line=assists_line,
@@ -1032,7 +1032,7 @@ class OddsService:
                                 over_under_history = self.player_stats_service.calculate_over_under_history(
                                     player_id=player_id,
                                     points_line=points_line,
-                                    num_games=25,
+                                    num_games=15,
                                     player_name=player_name,
                                     use_local_only=True  # Only use local game logs, no NBA API calls
                                 )

@@ -42,10 +42,17 @@ nba_client = None
 player_stats_service = None
 game_log_service = None
 try:
-    nba_client = NBAClient(config.NBA_API_SERVICE_URL)
+    nba_client = NBAClient(
+        config.NBA_API_SERVICE_URL,
+        request_timeout_seconds=config.NBA_API_REQUEST_TIMEOUT_SECONDS
+    )
     # Initialize game log repository and service
     game_log_repository = GameLogRepository(db_connection)
-    game_log_service = GameLogService(nba_client, game_log_repository)
+    game_log_service = GameLogService(
+        nba_client,
+        game_log_repository,
+        thread_timeout_seconds=config.NBA_API_GAME_LOG_THREAD_TIMEOUT_SECONDS
+    )
     # Initialize player stats service with game log service for optimization
     player_stats_service = PlayerStatsService(nba_client, game_log_service)
 except Exception as e:
@@ -73,7 +80,13 @@ schedule_controller = ScheduleController(schedule_service, depth_chart_service)
 lineup_controller = LineupController(lineup_service, odds_service)
 odds_controller = OddsController(odds_service)
 depth_chart_controller = DepthChartController(depth_chart_service)
-game_log_controller = GameLogController(game_log_service) if game_log_service else None
+game_log_controller = (
+    GameLogController(
+        game_log_service,
+        thread_timeout_seconds=config.NBA_API_GAME_LOG_THREAD_TIMEOUT_SECONDS
+    )
+    if game_log_service else None
+)
 
 
 @nba_bp.route("/games", methods=["GET"])
@@ -132,6 +145,27 @@ def get_lineups():
         }, 400
     
     return lineup_controller.get_lineups_by_date(date)
+
+
+@nba_bp.route("/lineups/resolve", methods=["GET"])
+def resolve_lineup_by_teams():
+    """
+    Resolve lineup for a game by teams (optionally by date).
+
+    Query parameters:
+        home_team: Home team abbreviation (required)
+        away_team: Away team abbreviation (required)
+        date: Date in YYYY-MM-DD format (optional)
+    """
+    home_team = request.args.get('home_team')
+    away_team = request.args.get('away_team')
+    date = request.args.get('date')
+    if not home_team or not away_team:
+        return {
+            "success": False,
+            "message": "home_team and away_team parameters are required"
+        }, 400
+    return lineup_controller.get_lineup_by_teams(home_team, away_team, date)
 
 
 @nba_bp.route("/lineups/import", methods=["POST"])
@@ -302,7 +336,7 @@ def load_player_game_logs(player_id: int):
         }, 503
     
     player_name = request.args.get('player_name')
-    num_games = int(request.args.get('num_games', 25))
+    num_games = int(request.args.get('num_games', 15))
     return game_log_controller.load_player_game_logs(player_id, player_name, num_games)
 
 
@@ -445,6 +479,25 @@ def get_cdn_boxscore(game_id: str):
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Error fetching CDN boxscore: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@nba_bp.route("/cdn/playbyplay/<game_id>", methods=["GET"])
+def get_cdn_playbyplay(game_id: str):
+    """
+    Get live play-by-play from NBA CDN (via NBA API microservice).
+    """
+    try:
+        url = f"{config.NBA_API_SERVICE_URL}/api/v1/cdn/playbyplay/{game_id}"
+        response = requests.get(url, timeout=10)
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching CDN play-by-play: {e}", exc_info=True)
         return jsonify({
             "success": False,
             "error": str(e)

@@ -28,7 +28,7 @@ class PlayerStatsService:
         self.game_log_service = game_log_service
     
     def calculate_over_under_history(self, player_id: int, points_line: float, 
-                                    num_games: int = 10, player_name: Optional[str] = None,
+                                    num_games: int = 15, player_name: Optional[str] = None,
                                     use_local_only: bool = False,
                                     assists_line: Optional[float] = None,
                                     rebounds_line: Optional[float] = None) -> Dict[str, Any]:
@@ -38,7 +38,7 @@ class PlayerStatsService:
         Args:
             player_id: Player ID (may be FantasyNerds ID, will try to find NBA ID if needed)
             points_line: Points line from odds (e.g., 22.5)
-            num_games: Number of recent games to analyze (default: 10)
+            num_games: Number of recent games to analyze (default: 15)
             player_name: Player name (optional, used to find NBA player ID if player_id doesn't work)
             use_local_only: If True, only use local game logs (no NBA API calls)
             

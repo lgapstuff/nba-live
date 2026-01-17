@@ -107,6 +107,41 @@ class GameRepository:
                     WHERE game_id = %s
                 """, (game_id,))
                 return cursor.fetchone()
+
+    def find_game_by_teams(self, home_team: str, away_team: str, date: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Find a game by team abbreviations, optionally filtered by date.
+
+        Args:
+            home_team: Home team abbreviation
+            away_team: Away team abbreviation
+            date: Optional date in YYYY-MM-DD format
+
+        Returns:
+            Game dictionary or None if not found
+        """
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                params = [home_team, away_team, away_team, home_team]
+                date_filter = ""
+                if date:
+                    date_filter = "AND game_date = %s"
+                    params.append(date)
+                cursor.execute(f"""
+                    SELECT
+                        game_id, home_team, away_team, game_date, game_time,
+                        status, season, season_type, home_team_name, away_team_name,
+                        home_team_logo_url, away_team_logo_url,
+                        home_score, away_score, score_last_update, game_completed
+                    FROM games
+                    WHERE (
+                        (home_team = %s AND away_team = %s)
+                        OR (home_team = %s AND away_team = %s)
+                    )
+                    {date_filter}
+                    LIMIT 1
+                """, params)
+                return cursor.fetchone()
     
     def save_batch(self, games_data: List[Dict[str, Any]]) -> int:
         """

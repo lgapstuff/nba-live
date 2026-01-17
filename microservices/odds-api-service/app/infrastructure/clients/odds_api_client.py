@@ -81,22 +81,26 @@ class OddsAPIClient:
             if not all_bookmakers:
                 return {}
             
-            # Filter to only FanDuel bookmaker
+            # Filter to only player prop markets for each bookmaker
             filtered_bookmakers = []
             for bookmaker in all_bookmakers:
-                bookmaker_key = bookmaker.get('key', '').lower()
-                if bookmaker_key == 'fanduel':
-                    markets_list = bookmaker.get('markets', [])
-                    player_prop_markets = [m for m in markets_list if m.get('key') in ['player_points', 'player_assists', 'player_rebounds']]
-                    if player_prop_markets:
-                        filtered_bookmakers.append({
-                            **bookmaker,
-                            'markets': player_prop_markets
-                        })
-                    break
+                markets_list = bookmaker.get('markets', [])
+                player_prop_markets = [
+                    m for m in markets_list
+                    if m.get('key') in ['player_points', 'player_assists', 'player_rebounds']
+                ]
+                if player_prop_markets:
+                    filtered_bookmakers.append({
+                        **bookmaker,
+                        'markets': player_prop_markets
+                    })
             
             if not filtered_bookmakers:
                 return {}
+            
+            # Prefer FanDuel, but fallback to any bookmaker that has player props
+            fanduel_bookmakers = [b for b in filtered_bookmakers if b.get('key', '').lower() == 'fanduel']
+            final_bookmakers = fanduel_bookmakers or filtered_bookmakers
             
             return {
                 'id': event_data.get('id'),
@@ -105,7 +109,7 @@ class OddsAPIClient:
                 'commence_time': event_data.get('commence_time'),
                 'home_team': event_data.get('home_team'),
                 'away_team': event_data.get('away_team'),
-                'bookmakers': filtered_bookmakers
+                'bookmakers': final_bookmakers
             }
         except requests.exceptions.RequestException as e:
             logger.error(f"[ODDS API] Error fetching odds: {e}")

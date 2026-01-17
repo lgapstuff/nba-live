@@ -14,14 +14,16 @@ logger = logging.getLogger(__name__)
 class GameLogController:
     """Controller for game log endpoints."""
     
-    def __init__(self, game_log_service: GameLogService):
+    def __init__(self, game_log_service: GameLogService, thread_timeout_seconds: float = 20.0):
         """
         Initialize the controller.
         
         Args:
             game_log_service: Game log service instance
+            thread_timeout_seconds: Timeout for NBA API calls in background threads
         """
         self.game_log_service = game_log_service
+        self.thread_timeout_seconds = float(thread_timeout_seconds)
     
     def load_game_logs_for_event(self, game_id: str) -> Tuple[Dict[str, Any], int]:
         """
@@ -63,7 +65,7 @@ class GameLogController:
                 game_id=game_id,
                 home_team_abbr=home_team,
                 away_team_abbr=away_team,
-                num_games=25
+                num_games=15
             )
             
             status_code = 200 if result.get('success', False) else 400
@@ -76,7 +78,7 @@ class GameLogController:
                 "message": f"Internal server error: {str(e)}"
             }), 500
     
-    def load_player_game_logs(self, player_id: int, player_name: str = None, num_games: int = 25) -> Tuple[Dict[str, Any], int]:
+    def load_player_game_logs(self, player_id: int, player_name: str = None, num_games: int = 15) -> Tuple[Dict[str, Any], int]:
         """
         Load game logs for a specific player from NBA API and save to database.
         
@@ -123,12 +125,15 @@ class GameLogController:
             fetch_thread = threading.Thread(target=fetch_games, daemon=True)
             fetch_thread.start()
             
-            # Wait for result with timeout (20 seconds)
-            fetch_thread.join(timeout=20.0)
+            # Wait for result with timeout
+            fetch_thread.join(timeout=self.thread_timeout_seconds)
             
             if fetch_thread.is_alive():
                 # Thread is still running, timeout occurred
-                logger.warning(f"Timeout loading game logs from NBA API for player {player_id} (20s timeout)")
+                logger.warning(
+                    f"Timeout loading game logs from NBA API for player {player_id} "
+                    f"({self.thread_timeout_seconds:.0f}s timeout)"
+                )
                 return jsonify({
                     "success": False,
                     "message": f"Timeout loading game logs for player {player_id}",
@@ -141,7 +146,9 @@ class GameLogController:
                 error = exception_queue.get_nowait()
                 error_msg = str(error).lower()
                 if 'timeout' in error_msg or 'timed out' in error_msg:
-                    logger.warning(f"Timeout loading game logs from NBA API for player {player_id}: {error}")
+                    logger.warning(
+                        f"Timeout loading game logs from NBA API for player {player_id}: {error}"
+                    )
                     return jsonify({
                         "success": False,
                         "message": f"Timeout loading game logs for player {player_id}",
@@ -216,7 +223,7 @@ class GameLogController:
         try:
             # Only get game logs from database - no lazy loading
             # Game logs should be pre-loaded using POST /players/<player_id>/game-logs/load
-            game_logs = self.game_log_service.get_player_game_logs(player_id, limit=25)
+            game_logs = self.game_log_service.get_player_game_logs(player_id, limit=15)
             
             logger.debug(f"Retrieved {len(game_logs)} game logs from DB for player {player_id}")
             

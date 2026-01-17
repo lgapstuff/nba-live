@@ -213,5 +213,23 @@ def create_nba_controller(client: NBAClient) -> Blueprint:
                 "success": False,
                 "error": str(e)
             }), 500
+
+    @bp.route("/cdn/playbyplay/<game_id>", methods=["GET"])
+    def get_cdn_playbyplay(game_id: str):
+        """Get live play-by-play from NBA CDN for a specific game."""
+        try:
+            cache_bust = request.args.get('t')
+            data = cdn_client.get_playbyplay(game_id, cache_bust=cache_bust)
+            return jsonify({
+                "success": True,
+                "game_id": game_id,
+                "playbyplay": data
+            })
+        except Exception as e:
+            logger.error(f"Error fetching CDN play-by-play: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
     
     return bp

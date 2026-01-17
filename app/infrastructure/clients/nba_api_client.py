@@ -18,14 +18,16 @@ class NBAClient(NBAPort):
     This client now calls the internal NBA API microservice instead of using nba_api library directly.
     """
     
-    def __init__(self, service_url: str = "http://nba-api-service:8002"):
+    def __init__(self, service_url: str = "http://nba-api-service:8002", request_timeout_seconds: float = 30.0):
         """
         Initialize the client.
         
         Args:
             service_url: Base URL for the NBA API microservice
+            request_timeout_seconds: Timeout for HTTP requests to the microservice
         """
         self.service_url = service_url.rstrip('/')
+        self.request_timeout_seconds = float(request_timeout_seconds)
         self._player_id_cache = {}  # Cache for player name -> NBA player_id mapping
     
     def get_player_game_log(self, player_id: int, season: Optional[str] = None, 
@@ -50,7 +52,7 @@ class NBAClient(NBAPort):
                 params['season_type'] = season_type
             
             logger.info(f"[NBA API SERVICE] REQUEST: Fetching game log for player {player_id}")
-            response = requests.get(url, params=params, timeout=30)
+            response = requests.get(url, params=params, timeout=self.request_timeout_seconds)
             response.raise_for_status()
             
             result = response.json()
@@ -105,7 +107,7 @@ class NBAClient(NBAPort):
             params = {'name': player_name}
             
             logger.info(f"[NBA API SERVICE] REQUEST: Finding player ID for {player_name}")
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=self.request_timeout_seconds)
             response.raise_for_status()
             
             result = response.json()
@@ -149,7 +151,7 @@ class NBAClient(NBAPort):
                 params['season_type'] = season_type
             
             logger.info(f"[NBA API SERVICE] REQUEST: Fetching last {n} games for player {player_id}")
-            response = requests.get(url, params=params, timeout=30)
+            response = requests.get(url, params=params, timeout=self.request_timeout_seconds)
             response.raise_for_status()
             
             result = response.json()
@@ -188,7 +190,7 @@ class NBAClient(NBAPort):
                 params['season'] = season
             
             logger.info(f"[NBA API SERVICE] REQUEST: Fetching players for team {team_abbr}")
-            response = requests.get(url, params=params, timeout=30)
+            response = requests.get(url, params=params, timeout=self.request_timeout_seconds)
             response.raise_for_status()
             
             result = response.json()
@@ -298,7 +300,7 @@ class NBAClient(NBAPort):
                 params['game_date'] = game_date
             
             logger.info(f"[NBA API SERVICE] REQUEST: Finding GameID for {away_team_abbr} @ {home_team_abbr}")
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=self.request_timeout_seconds)
             response.raise_for_status()
             
             result = response.json()

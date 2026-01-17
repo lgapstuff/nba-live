@@ -400,6 +400,30 @@ class LineupService:
                 lineup = enriched_lineups[0]
         
         return lineup
+
+    def get_lineup_by_teams(self, home_team: str, away_team: str, date: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Get lineup for a game identified by team abbreviations.
+        Attempts to resolve game by teams (and optional date), then fetch lineup.
+
+        Args:
+            home_team: Home team abbreviation
+            away_team: Away team abbreviation
+            date: Optional date in YYYY-MM-DD format
+
+        Returns:
+            Lineup dictionary or None if not found
+        """
+        if not home_team or not away_team:
+            return None
+        game = self.game_repository.find_game_by_teams(home_team, away_team, date)
+        if not game:
+            return None
+        lineup = self.get_lineup_by_game_id(game.get('game_id'), auto_fetch=True)
+        return {
+            "game": game,
+            "lineup": lineup
+        }
     
     def _import_rosters_as_bench_for_date(self, date: str, games: List[Dict[str, Any]]) -> Dict[str, Any]:
         """

@@ -18,19 +18,21 @@ class GameLogService:
     Pre-loads game logs from NBA API and stores them locally.
     """
     
-    def __init__(self, nba_api: NBAPort, game_log_repository: GameLogRepository):
+    def __init__(self, nba_api: NBAPort, game_log_repository: GameLogRepository, thread_timeout_seconds: float = 20.0):
         """
         Initialize the service.
         
         Args:
             nba_api: NBA API port for fetching game logs
             game_log_repository: Repository for game log operations
+            thread_timeout_seconds: Timeout for NBA API calls in background threads
         """
         self.nba_api = nba_api
         self.game_log_repository = game_log_repository
+        self.thread_timeout_seconds = float(thread_timeout_seconds)
     
     def load_game_logs_for_event(self, game_id: str, home_team_abbr: str, 
-                                 away_team_abbr: str, num_games: int = 25) -> Dict[str, Any]:
+                                 away_team_abbr: str, num_games: int = 15) -> Dict[str, Any]:
         """
         Load game logs for all players from both teams in an event.
         Stores the last N games for each player in the database.
@@ -96,12 +98,15 @@ class GameLogService:
                     fetch_thread = threading.Thread(target=fetch_games, daemon=True)
                     fetch_thread.start()
                     
-                    # Wait for result with timeout (20 seconds)
-                    fetch_thread.join(timeout=20.0)
+                    # Wait for result with timeout
+                    fetch_thread.join(timeout=self.thread_timeout_seconds)
                     
                     if fetch_thread.is_alive():
                         # Thread is still running, timeout occurred
-                        error_msg = f"Timeout loading game logs for {player_name} (ID: {player_id}) - 20s timeout exceeded"
+                        error_msg = (
+                            f"Timeout loading game logs for {player_name} (ID: {player_id}) - "
+                            f"{self.thread_timeout_seconds:.0f}s timeout exceeded"
+                        )
                         logger.warning(error_msg)
                         errors.append(error_msg)
                         continue
@@ -182,7 +187,7 @@ class GameLogService:
         return self.game_log_repository.get_player_game_logs(player_id, limit)
     
     def calculate_over_under_from_local(self, player_id: int, points_line: float, 
-                                       num_games: int = 10,
+                                       num_games: int = 15,
                                        assists_line: Optional[float] = None,
                                        rebounds_line: Optional[float] = None) -> Dict[str, Any]:
         """
@@ -191,7 +196,7 @@ class GameLogService:
         Args:
             player_id: NBA player ID
             points_line: Points line from odds
-            num_games: Number of recent games to analyze (default: 10)
+            num_games: Number of recent games to analyze (default: 15)
             assists_line: Assists line from odds (optional)
             rebounds_line: Rebounds line from odds (optional)
             

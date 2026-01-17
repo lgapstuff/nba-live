@@ -24,6 +24,10 @@ class Config:
     FANTASYNERDS_SERVICE_URL: str = os.getenv("FANTASYNERDS_SERVICE_URL", "http://fantasynerds-service:8001")
     NBA_API_SERVICE_URL: str = os.getenv("NBA_API_SERVICE_URL", "http://nba-api-service:8002")
     ODDS_API_SERVICE_URL: str = os.getenv("ODDS_API_SERVICE_URL", "http://odds-api-service:8003")
+
+    # NBA API request/timeouts
+    NBA_API_REQUEST_TIMEOUT_SECONDS: float = float(os.getenv("NBA_API_REQUEST_TIMEOUT_SECONDS", "60"))
+    NBA_API_GAME_LOG_THREAD_TIMEOUT_SECONDS: float = float(os.getenv("NBA_API_GAME_LOG_THREAD_TIMEOUT_SECONDS", "65"))
     
     # Cache settings
     CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", "120"))

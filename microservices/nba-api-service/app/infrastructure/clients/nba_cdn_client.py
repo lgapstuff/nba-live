@@ -21,9 +21,17 @@ class NBACdnClient:
             "NBA_CDN_BOXSCORE_URL_TEMPLATE",
             "https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id}.json",
         )
+        self.playbyplay_url_template = os.getenv(
+            "NBA_CDN_PLAYBYPLAY_URL_TEMPLATE",
+            "https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_{game_id}.json",
+        )
         self.s3_boxscore_url_template = os.getenv(
             "NBA_S3_BOXSCORE_URL_TEMPLATE",
             "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData/boxscore/boxscore_{game_id}.json",
+        )
+        self.s3_playbyplay_url_template = os.getenv(
+            "NBA_S3_PLAYBYPLAY_URL_TEMPLATE",
+            "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData/playbyplay/playbyplay_{game_id}.json",
         )
 
     def get_todays_scoreboard(self) -> Dict[str, Any]:
@@ -56,6 +64,29 @@ class NBACdnClient:
         if last_error:
             raise last_error
         raise urllib.error.URLError("Unable to fetch boxscore.")
+
+    def get_playbyplay(self, game_id: str, cache_bust: str | None = None) -> Dict[str, Any]:
+        """Return play-by-play JSON for a specific NBA GameID."""
+        url = self.playbyplay_url_template.format(game_id=game_id)
+        if cache_bust:
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}t={cache_bust}"
+        urls = [url, self.s3_playbyplay_url_template.format(game_id=game_id)]
+        last_error: Optional[Exception] = None
+        for candidate in urls:
+            try:
+                return self._fetch_json(candidate)
+            except urllib.error.HTTPError as exc:
+                last_error = exc
+                if exc.code in {403, 404, 410}:
+                    continue
+                raise
+            except urllib.error.URLError as exc:
+                last_error = exc
+                continue
+        if last_error:
+            raise last_error
+        raise urllib.error.URLError("Unable to fetch play-by-play.")
 
     def _get_scoreboard_game(self, game_id: str) -> Optional[Dict[str, Any]]:
         try:
