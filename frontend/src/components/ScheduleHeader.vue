@@ -1,9 +1,8 @@
 <template>
   <section class="schedule">
     <div class="schedule-status">
-      <p v-if="isLoading" class="muted">Cargando juegos...</p>
-      <p v-else-if="error" class="error">{{ error }}</p>
-      <p v-else-if="games.length === 0" class="muted">No hay juegos hoy.</p>
+      <p v-if="error" class="error">{{ error }}</p>
+      <p v-else-if="games.length === 0 && !isLoading" class="muted">No hay juegos hoy.</p>
     </div>
 
     <div class="schedule-row" v-if="games.length">
@@ -20,7 +19,8 @@
             class="schedule-card"
             :class="{
               'schedule-card--active': game.gameId === selectedGameId,
-              'schedule-card--loading': game.gameId === loadingGameId
+              'schedule-card--loading': game.gameId === loadingGameId,
+              'schedule-card--timeout': game.isTimeout
             }"
             role="button"
             tabindex="0"
@@ -31,20 +31,21 @@
               <span class="badge" v-if="game.label">{{ game.label }}</span>
               <span class="time" v-if="game.time">{{ game.time }}</span>
             </div>
+            <span v-if="game.isLive" class="live-dot" aria-hidden="true"></span>
             <div class="schedule-card__teams">
               <div class="team-row">
                 <div class="team">
                   <img v-if="game.awayLogo" :src="game.awayLogo" :alt="game.awayName" />
                   <span>{{ game.awayName }}</span>
                 </div>
-                <span class="record">{{ game.awayRecord }}</span>
+                <span class="record" :class="{ 'record--live': game.isLive }">{{ game.awayRecord }}</span>
               </div>
               <div class="team-row">
                 <div class="team">
                   <img v-if="game.homeLogo" :src="game.homeLogo" :alt="game.homeName" />
                   <span>{{ game.homeName }}</span>
                 </div>
-                <span class="record">{{ game.homeRecord }}</span>
+                <span class="record" :class="{ 'record--live': game.isLive }">{{ game.homeRecord }}</span>
               </div>
             </div>
           </article>
@@ -55,7 +56,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { fetchCdnScoreboard } from "../api/endpoints";
 
 const props = defineProps({
@@ -128,6 +129,32 @@ const getStartDate = (game) => {
   return null;
 };
 
+const formatGameClock = (clock) => {
+  if (!clock) {
+    return "";
+  }
+  const match = /PT(\d+)M(\d+)\.(\d+)S/.exec(clock);
+  if (!match) {
+    return String(clock);
+  }
+  const minutes = String(match[1]).padStart(2, "0");
+  const seconds = String(match[2]).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+};
+
+const formatStatusText = (statusText) => {
+  if (!statusText) {
+    return "";
+  }
+  const match = /Q(\d+)\s+PT(\d+)M(\d+)\.(\d+)S/i.exec(statusText);
+  if (!match) {
+    return statusText;
+  }
+  const minutes = String(match[2]).padStart(2, "0");
+  const seconds = String(match[3]).padStart(2, "0");
+  return `Q${match[1]} ${minutes}:${seconds}`;
+};
+
 const loadSchedule = async () => {
   isLoading.value = true;
   error.value = null;
@@ -142,13 +169,26 @@ const loadSchedule = async () => {
     const scoreboardGames = scoreboard?.games || [];
     dateLabel.value = formatScoreboardDate(scoreboard?.gameDate);
     const now = new Date();
-    games.value = scoreboardGames.map((game) => {
+    games.value = scoreboardGames
+      .filter((game) => {
+        const statusText = String(game?.gameStatusText || "").toLowerCase();
+        return Number(game?.gameStatus) !== 3 && !statusText.includes("final");
+      })
+      .map((game) => {
       const away = game.awayTeam || {};
       const home = game.homeTeam || {};
       const statusText = (game.gameStatusText || "").trim();
+      const isTimeout = statusText.toLowerCase().includes("timeout");
       const startDate = getStartDate(game);
       const minutesToStart = startDate ? (startDate - now) / 60000 : null;
       const isScheduled = game.gameStatus === 1;
+      const isLive = Number(game.gameStatus) >= 2 && Number(game.gameStatus) !== 3;
+      const period = game.period ?? game.gamePeriod ?? null;
+      const clock = game.gameClock || "";
+      const formattedClock = formatGameClock(clock);
+      const fallbackTime = period && formattedClock
+        ? `Q${period} ${formattedClock}`
+        : formatStatusText(statusText);
       const isPregame = isScheduled && minutesToStart !== null && minutesToStart <= 30 && minutesToStart >= 0;
       let time = "";
       let label = "";
@@ -156,7 +196,7 @@ const loadSchedule = async () => {
         time = formatTijuanaTime(startDate) || "Hora por confirmar";
         label = isPregame ? "PRE GAME" : "";
       } else {
-        time = statusText || (game.gameStatus === 3 ? "Final" : "");
+        time = fallbackTime || (game.gameStatus === 3 ? "Final" : "");
       }
       return {
         gameId: game.gameId,
@@ -168,18 +208,20 @@ const loadSchedule = async () => {
         gameClock: game.gameClock || "",
         gamePeriod: game.period ?? null,
         gameTimeUTC: game.gameTimeUTC || "",
+        isTimeout,
+        isLive,
         awayName: away.teamName || away.teamTricode || "Away",
         homeName: home.teamName || home.teamTricode || "Home",
         awayTricode: away.teamTricode || "",
         homeTricode: home.teamTricode || "",
         awayScore: away.score ?? null,
         homeScore: home.score ?? null,
-        awayRecord: formatRecord(away.wins, away.losses),
-        homeRecord: formatRecord(home.wins, home.losses),
+        awayRecord: isLive ? (away.score ?? 0) : formatRecord(away.wins, away.losses),
+        homeRecord: isLive ? (home.score ?? 0) : formatRecord(home.wins, home.losses),
         awayLogo: getTeamLogo(away.teamId),
         homeLogo: getTeamLogo(home.teamId)
       };
-    });
+      });
     emit("loaded", games.value);
   } catch (err) {
     error.value = err?.message || "Error inesperado al cargar el scoreboard.";
@@ -193,7 +235,24 @@ const handleSelect = (game) => {
   emit("select", game);
 };
 
-onMounted(loadSchedule);
+let refreshIntervalId = null;
+
+onMounted(() => {
+  loadSchedule();
+  refreshIntervalId = setInterval(() => {
+    if (isLoading.value) {
+      return;
+    }
+    loadSchedule();
+  }, 10000);
+});
+
+onUnmounted(() => {
+  if (refreshIntervalId) {
+    clearInterval(refreshIntervalId);
+    refreshIntervalId = null;
+  }
+});
 </script>
 
 <style scoped>
@@ -203,7 +262,7 @@ onMounted(loadSchedule);
 }
 
 .schedule-status {
-  min-height: 24px;
+  min-height: 15px;
 }
 
 .muted {
@@ -280,6 +339,9 @@ onMounted(loadSchedule);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
   cursor: pointer;
+  position: relative;
+  overflow: visible;
+  z-index: 0;
 }
 
 .schedule-card:hover {
@@ -304,6 +366,34 @@ onMounted(loadSchedule);
 .schedule-card--loading .team span,
 .schedule-card--loading .record {
   color: #ffffff;
+}
+
+.schedule-card--timeout::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 16px;
+  background: conic-gradient(from 0deg, #ff4500, #ffae00, #ff7a18, #ff4500);
+  filter: blur(10px);
+  opacity: 0.75;
+  z-index: -1;
+  animation: flameSpin 2.2s linear infinite;
+  pointer-events: none;
+}
+
+.schedule-card--timeout::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 120, 0, 0.7);
+  box-shadow: 0 0 12px rgba(255, 120, 0, 0.6);
+  pointer-events: none;
+}
+
+@keyframes flameSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .schedule-card__header {
@@ -354,5 +444,22 @@ onMounted(loadSchedule);
   color: #64748b;
   font-weight: 600;
   font-size: 12px;
+}
+
+.record--live {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.live-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #dc2626;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.7);
 }
 </style>

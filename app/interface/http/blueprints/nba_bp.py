@@ -365,6 +365,50 @@ def get_player_game_logs(player_id: int):
     return game_log_controller.get_player_game_logs(player_id, player_name)
 
 
+@nba_bp.route("/players/<int:player_id>/profile", methods=["GET"])
+def get_player_profile(player_id: int):
+    """
+    Get player profile details (height, weight, age, etc.).
+    
+    Path parameters:
+        player_id: NBA player ID
+    
+    Query parameters:
+        player_name: Player name (optional, used for ID fallback)
+    
+    Returns:
+        JSON with player profile data
+    """
+    if not nba_client:
+        return jsonify({
+            "success": False,
+            "message": "NBA API client not available."
+        }), 503
+    
+    player_name = request.args.get('player_name')
+    profile = nba_client.get_player_profile(player_id)
+    if not profile and player_name:
+        nba_player_id = nba_client.find_nba_player_id_by_name(player_name)
+        if nba_player_id and nba_player_id != player_id:
+            profile = nba_client.get_player_profile(nba_player_id)
+            if profile:
+                profile["resolved_from"] = "player_name"
+                profile["resolved_player_id"] = nba_player_id
+    
+    if not profile:
+        return jsonify({
+            "success": False,
+            "player_id": player_id,
+            "message": "No profile data found"
+        }), 404
+    
+    return jsonify({
+        "success": True,
+        "player_id": player_id,
+        "profile": profile
+    }), 200
+
+
 @nba_bp.route("/games/<game_id>/live-stats", methods=["POST"])
 def get_live_player_stats(game_id: str):
     """

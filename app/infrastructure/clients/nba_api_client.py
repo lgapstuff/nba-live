@@ -205,6 +205,27 @@ class NBAClient(NBAPort):
             logger.error(f"[NBA API] REQUEST ERROR: Error fetching team players for {team_abbr}: {e}")
             return []
     
+    def get_player_profile(self, player_id: int) -> Dict[str, Any]:
+        """
+        Get player profile details (height, weight, age, etc.) from NBA API microservice.
+        """
+        try:
+            url = f"{self.service_url}/api/v1/players/{player_id}/profile"
+            logger.info(f"[NBA API SERVICE] REQUEST: Fetching profile for player {player_id}")
+            response = requests.get(url, timeout=self.request_timeout_seconds)
+            response.raise_for_status()
+            result = response.json()
+            if result.get('success'):
+                return result.get('profile', {})
+            logger.warning(f"[NBA API SERVICE] RESPONSE ERROR: {result.get('error')}")
+            return {}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[NBA API SERVICE] REQUEST ERROR: Error fetching player profile: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"[NBA API SERVICE] ERROR: Unexpected error: {e}")
+            return {}
+
     def get_live_boxscore(self, game_id: str, player_ids: Optional[List[int]] = None) -> Any:
         """
         Get live boxscore statistics for specific players in a game.

@@ -62,6 +62,29 @@ def create_nba_controller(client: NBAClient) -> Blueprint:
                 "success": False,
                 "error": str(e)
             }), 500
+
+    @bp.route("/players/<int:player_id>/profile", methods=["GET"])
+    def get_player_profile(player_id: int):
+        """Get player profile details (height, weight, age, etc.)."""
+        try:
+            profile = client.get_player_profile(player_id)
+            if not profile:
+                return jsonify({
+                    "success": False,
+                    "player_id": player_id,
+                    "error": "No profile data found"
+                }), 404
+            return jsonify({
+                "success": True,
+                "player_id": player_id,
+                "profile": profile
+            })
+        except Exception as e:
+            logger.error(f"Error fetching player profile: {e}", exc_info=True)
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
     
     @bp.route("/players/find-by-name", methods=["GET"])
     def find_player_by_name():

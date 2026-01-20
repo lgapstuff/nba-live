@@ -224,12 +224,34 @@ class GameLogController:
             # Only get game logs from database - no lazy loading
             # Game logs should be pre-loaded using POST /players/<player_id>/game-logs/load
             game_logs = self.game_log_service.get_player_game_logs(player_id, limit=15)
+            resolved_player_id = player_id
+            resolved_by = "player_id"
+
+            if not game_logs and player_name:
+                game_logs = self.game_log_service.game_log_repository.get_player_game_logs_by_name(
+                    player_name, limit=15
+                )
+                if game_logs:
+                    resolved_by = "player_name"
+                    resolved_player_id = game_logs[0].get("player_id", player_id)
+
+            if not game_logs and player_name:
+                try:
+                    nba_player_id = self.game_log_service.nba_api.find_nba_player_id_by_name(player_name)
+                    if nba_player_id and nba_player_id != player_id:
+                        game_logs = self.game_log_service.get_player_game_logs(nba_player_id, limit=15)
+                        if game_logs:
+                            resolved_by = "nba_id_lookup"
+                            resolved_player_id = nba_player_id
+                except Exception as e:
+                    logger.warning(f"NBA ID lookup failed for {player_name}: {e}")
             
             logger.debug(f"Retrieved {len(game_logs)} game logs from DB for player {player_id}")
             
             return jsonify({
                 "success": True,
-                "player_id": player_id,
+                "player_id": resolved_player_id,
+                "resolved_by": resolved_by,
                 "game_logs": game_logs,
                 "total_games": len(game_logs),
                 "loaded_from_db": True

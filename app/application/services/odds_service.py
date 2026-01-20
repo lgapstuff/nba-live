@@ -199,7 +199,7 @@ class OddsService:
                     "message": f"Could not find matching event in The Odds API for {game.get('away_team_name', 'Away')} @ {game.get('home_team_name', 'Home')} on {game.get('game_date', 'unknown date')}. The game may not be available in The Odds API yet."
                 }
             
-            # Get odds from The Odds API (only FanDuel) - try to get points, assists, and rebounds
+            # Get odds from The Odds API - try to get points, assists, and rebounds
             # First try with all markets, fallback to just points if that fails
             try:
                 odds_data = self.odds_api.get_player_points_odds(
@@ -236,7 +236,7 @@ class OddsService:
             if not odds_data or 'bookmakers' not in odds_data or not odds_data.get('bookmakers'):
                 return {
                     "success": False,
-                    "message": "No FanDuel player points odds available from The Odds API for this event"
+                    "message": "No player props odds available from The Odds API for this event"
                 }
             
             # Match players from lineup with odds
@@ -660,13 +660,8 @@ class OddsService:
         # Extract unique players from odds (to avoid duplicates)
         odds_players_map = {}
         bookmakers = odds_data.get('bookmakers', [])
-        has_fanduel = any(b.get('key', '').lower() == 'fanduel' for b in bookmakers)
         
         for bookmaker in bookmakers:
-            bookmaker_key = bookmaker.get('key', '').lower()
-            if has_fanduel and bookmaker_key != 'fanduel':
-                logger.debug(f"Skipping bookmaker {bookmaker.get('key')} - FanDuel available")
-                continue
             
             markets = bookmaker.get('markets', [])
             market_keys = [m.get('key') for m in markets]
@@ -741,11 +736,33 @@ class OddsService:
                         odds_entry['assists_under_odds'] = player_data['player_assists']['under']['price']
                 
                 # Add rebounds market data (optional)
-                if player_data['player_rebounds'].get('over'):
-                    odds_entry['rebounds_line'] = player_data['player_rebounds']['over']['point']
-                    odds_entry['rebounds_odds'] = player_data['player_rebounds']['over']['price']
-                    if player_data['player_rebounds'].get('under'):
-                        odds_entry['rebounds_under_odds'] = player_data['player_rebounds']['under']['price']
+                rebounds_over = player_data['player_rebounds'].get('over')
+                rebounds_under = player_data['player_rebounds'].get('under')
+                if rebounds_over:
+                    rebounds_line_value = rebounds_over.get('point')
+                    odds_entry['rebounds_line'] = rebounds_line_value
+                    odds_entry['rebounds_odds'] = rebounds_over.get('price')
+                    if rebounds_under:
+                        odds_entry['rebounds_under_odds'] = rebounds_under.get('price')
+                        under_point = rebounds_under.get('point')
+                        if under_point != rebounds_line_value:
+                            def _price_distance_to_even(price):
+                                try:
+                                    return abs(abs(float(price)) - 100.0)
+                                except (TypeError, ValueError):
+                                    return float('inf')
+
+                            over_distance = _price_distance_to_even(rebounds_over.get('price'))
+                            under_distance = _price_distance_to_even(rebounds_under.get('price'))
+                            if under_distance < over_distance:
+                                odds_entry['rebounds_line'] = under_point
+                            logger.warning(
+                                "[ODDS] Rebounds line mismatch for %s: Over=%s, Under=%s, using %s",
+                                player_data['name'],
+                                rebounds_line_value,
+                                under_point,
+                                odds_entry['rebounds_line']
+                            )
                 
                 # Only add to odds_players_map if we have at least points_line (required)
                 if odds_entry.get('points_line') is not None:
@@ -900,8 +917,7 @@ class OddsService:
                 # Update points_line, assists_line, rebounds_line in database for this STARTER player
                 if game_date and player_odds_data['odds']:
                     try:
-                        # Use the first odds entry (should only be one from FanDuel)
-                        # If there are multiple entries, log a warning
+                        # Use the first odds entry (if multiple entries, log a warning)
                         if len(player_odds_data['odds']) > 1:
                             logger.warning(f"[ODDS] Multiple odds entries found for {matched_starter['player_name']}: {len(player_odds_data['odds'])} entries. Using first one.")
                             for idx, entry in enumerate(player_odds_data['odds']):

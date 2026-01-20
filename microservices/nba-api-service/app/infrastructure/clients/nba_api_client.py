@@ -39,11 +39,12 @@ class NBAClient:
         """Initialize the client."""
         self._player_id_cache = {}
         try:
-            from nba_api.stats.endpoints import playergamelog, commonteamroster, boxscoretraditionalv2, scoreboardv2
+            from nba_api.stats.endpoints import playergamelog, commonteamroster, commonplayerinfo, boxscoretraditionalv2, scoreboardv2
             from nba_api.stats.library.parameters import SeasonType
             from nba_api.stats.static import players, teams
             self.playergamelog = playergamelog
             self.commonteamroster = commonteamroster
+            self.commonplayerinfo = commonplayerinfo
             self.boxscoretraditionalv2 = boxscoretraditionalv2
             self.scoreboardv2 = scoreboardv2
             self.SeasonType = SeasonType
@@ -191,6 +192,33 @@ class NBAClient:
         except Exception as e:
             logger.error(f"Error fetching team players: {e}")
             return []
+
+    def get_player_profile(self, player_id: int) -> Dict[str, Any]:
+        """Get player profile details (height, weight, age, etc.)."""
+        try:
+            profile = self.commonplayerinfo.CommonPlayerInfo(player_id=player_id)
+            data_frames = profile.get_data_frames()
+            if not data_frames or len(data_frames) == 0:
+                return {}
+            df = data_frames[0]
+            if df.empty:
+                return {}
+            row = df.iloc[0].to_dict()
+            return {
+                "player_id": player_id,
+                "full_name": row.get("DISPLAY_FIRST_LAST") or row.get("PLAYER_NAME"),
+                "height": row.get("HEIGHT"),
+                "weight": row.get("WEIGHT"),
+                "birth_date": row.get("BIRTHDATE"),
+                "age": row.get("PLAYER_AGE"),
+                "position": row.get("POSITION"),
+                "school": row.get("SCHOOL"),
+                "country": row.get("COUNTRY"),
+                "experience": row.get("SEASON_EXP")
+            }
+        except Exception as e:
+            logger.error(f"Error fetching player profile: {e}")
+            return {}
     
     def get_live_boxscore(self, game_id: str, player_ids: Optional[List[int]] = None) -> Any:
         """Get live boxscore statistics for a game."""

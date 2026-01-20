@@ -4,7 +4,8 @@ Lineup service for managing NBA lineups and associating them with games.
 import logging
 import unicodedata
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.domain.ports.fantasynerds_port import FantasyNerdsPort
 from app.infrastructure.repositories.lineup_repository import LineupRepository
@@ -418,7 +419,30 @@ class LineupService:
             return None
         game = self.game_repository.find_game_by_teams(home_team, away_team, date)
         if not game:
-            return None
+            # If not found, try fetching lineups and re-resolve the game
+            try:
+                if not date:
+                    la_tz = ZoneInfo("America/Los_Angeles")
+                    date = datetime.now(la_tz).date().strftime("%Y-%m-%d")
+                import_result = self.import_lineups_for_date(date)
+                if not import_result.get("success"):
+                    logger.info(f"[LINEUP] Import lineups failed for {date}: {import_result.get('message')}")
+                game = self.game_repository.find_game_by_teams(home_team, away_team, date)
+                if not game:
+                    # Try adjacent dates in case of date mismatches
+                    try:
+                        date_obj = datetime.strptime(date, "%Y-%m-%d")
+                        for offset in [-1, 1]:
+                            candidate = (date_obj + timedelta(days=offset)).strftime("%Y-%m-%d")
+                            game = self.game_repository.find_game_by_teams(home_team, away_team, candidate)
+                            if game:
+                                break
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"[LINEUP] Could not fetch lineups for teams {home_team} vs {away_team}: {e}")
+            if not game:
+                return None
         lineup = self.get_lineup_by_game_id(game.get('game_id'), auto_fetch=True)
         return {
             "game": game,

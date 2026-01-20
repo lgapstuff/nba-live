@@ -59,8 +59,21 @@ export const loadGameLogsForEvent = async (gameId) => {
   return data;
 };
 
-export const fetchPlayerGameLogs = async (playerId) => {
-  const { data } = await http.get(`/nba/players/${playerId}/game-logs`);
+export const fetchPlayerGameLogs = async (playerId, playerName) => {
+  const params = {};
+  if (playerName) {
+    params.player_name = playerName;
+  }
+  const { data } = await http.get(`/nba/players/${playerId}/game-logs`, { params });
+  return data;
+};
+
+export const fetchPlayerProfile = async (playerId, playerName) => {
+  const params = {};
+  if (playerName) {
+    params.player_name = playerName;
+  }
+  const { data } = await http.get(`/nba/players/${playerId}/profile`, { params });
   return data;
 };
 

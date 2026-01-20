@@ -433,6 +433,87 @@ class GameLogRepository:
 
                 return results
 
+    def get_player_game_logs_by_name(self, player_name: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get game logs for a player by name (case-insensitive), ordered by most recent first.
+        """
+        if not player_name:
+            return []
+        with self.db.get_connection() as conn:
+            with conn.cursor() as cursor:
+                if limit:
+                    cursor.execute("""
+                        SELECT 
+                            player_id, player_name, game_date, matchup,
+                            points, minutes_played, start_position, starter_status,
+                            field_goals_made, field_goals_attempted,
+                            three_pointers_made, three_pointers_attempted,
+                            free_throws_made, free_throws_attempted,
+                            rebounds, assists, steals, blocks,
+                            turnovers, personal_fouls, plus_minus,
+                            game_data
+                        FROM player_game_logs
+                        WHERE LOWER(player_name) = LOWER(%s)
+                        ORDER BY game_date DESC, id DESC
+                        LIMIT %s
+                    """, (player_name, limit))
+                else:
+                    cursor.execute("""
+                        SELECT 
+                            player_id, player_name, game_date, matchup,
+                            points, minutes_played, start_position, starter_status,
+                            field_goals_made, field_goals_attempted,
+                            three_pointers_made, three_pointers_attempted,
+                            free_throws_made, free_throws_attempted,
+                            rebounds, assists, steals, blocks,
+                            turnovers, personal_fouls, plus_minus,
+                            game_data
+                        FROM player_game_logs
+                        WHERE LOWER(player_name) = LOWER(%s)
+                        ORDER BY game_date DESC, id DESC
+                    """, (player_name,))
+
+                rows = cursor.fetchall()
+
+                results = []
+                for row in rows:
+                    game_data = json.loads(row['game_data']) if row.get('game_data') else None
+                    start_position = row.get('start_position')
+                    starter_status = row.get('starter_status')
+
+                    if not start_position and not starter_status and isinstance(game_data, dict):
+                        if 'START_POSITION' in game_data:
+                            start_position = game_data.get('START_POSITION') or None
+                        if 'START_POSITION' in game_data and not starter_status:
+                            starter_status = 'STARTER' if start_position else starter_status
+
+                    results.append({
+                        'player_id': row['player_id'],
+                        'player_name': row['player_name'],
+                        'game_date': str(row['game_date']) if row.get('game_date') else None,
+                        'matchup': row.get('matchup'),
+                        'points': row.get('points'),
+                        'minutes_played': row.get('minutes_played'),
+                        'start_position': start_position,
+                        'starter_status': starter_status,
+                        'field_goals_made': row.get('field_goals_made'),
+                        'field_goals_attempted': row.get('field_goals_attempted'),
+                        'three_pointers_made': row.get('three_pointers_made'),
+                        'three_pointers_attempted': row.get('three_pointers_attempted'),
+                        'free_throws_made': row.get('free_throws_made'),
+                        'free_throws_attempted': row.get('free_throws_attempted'),
+                        'rebounds': row.get('rebounds'),
+                        'assists': row.get('assists'),
+                        'steals': row.get('steals'),
+                        'blocks': row.get('blocks'),
+                        'turnovers': row.get('turnovers'),
+                        'personal_fouls': row.get('personal_fouls'),
+                        'plus_minus': row.get('plus_minus'),
+                        'game_data': game_data
+                    })
+
+                return results
+
     def get_latest_game_date(self, player_id: int) -> Optional[datetime]:
         """
         Get the most recent game_date for a player.

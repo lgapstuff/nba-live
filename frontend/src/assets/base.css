@@ -9,6 +9,7 @@ body {
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   color: #0f172a;
   background: #f8fafc;
+  overflow-x: hidden;
 }
 
 code {

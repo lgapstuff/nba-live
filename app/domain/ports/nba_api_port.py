@@ -75,6 +75,19 @@ class NBAPort(ABC):
             - team_abbreviation: Team abbreviation
         """
         pass
+
+    @abstractmethod
+    def get_player_profile(self, player_id: int) -> Dict[str, Any]:
+        """
+        Get player profile details (height, weight, age, etc.).
+        
+        Args:
+            player_id: NBA player ID
+            
+        Returns:
+            Dictionary with player profile data
+        """
+        pass
     
     @abstractmethod
     def get_live_boxscore(self, game_id: str, player_ids: Optional[List[int]] = None) -> Any:

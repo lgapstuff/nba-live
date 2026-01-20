@@ -74,6 +74,7 @@ class OddsAPIClient:
             response.raise_for_status()
             
             event_data = response.json()
+            logger.info(f"[ODDS API] Raw odds response for event {event_id}: {json.dumps(event_data, indent=2, default=str)}")
             if not event_data:
                 return {}
             
@@ -98,10 +99,6 @@ class OddsAPIClient:
             if not filtered_bookmakers:
                 return {}
             
-            # Prefer FanDuel, but fallback to any bookmaker that has player props
-            fanduel_bookmakers = [b for b in filtered_bookmakers if b.get('key', '').lower() == 'fanduel']
-            final_bookmakers = fanduel_bookmakers or filtered_bookmakers
-            
             return {
                 'id': event_data.get('id'),
                 'sport_key': event_data.get('sport_key'),
@@ -109,7 +106,7 @@ class OddsAPIClient:
                 'commence_time': event_data.get('commence_time'),
                 'home_team': event_data.get('home_team'),
                 'away_team': event_data.get('away_team'),
-                'bookmakers': final_bookmakers
+                'bookmakers': filtered_bookmakers
             }
         except requests.exceptions.RequestException as e:
             logger.error(f"[ODDS API] Error fetching odds: {e}")
