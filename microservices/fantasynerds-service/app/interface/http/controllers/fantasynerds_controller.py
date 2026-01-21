@@ -30,67 +30,26 @@ def create_fantasynerds_controller(client: FantasyNerdsClient) -> Blueprint:
             "service": "fantasynerds-service"
         })
     
-    @bp.route("/games/<date>", methods=["GET"])
-    def get_games(date: str):
+    @bp.route("/lineups", methods=["GET"])
+    def get_lineups_by_date():
         """
-        Get games for a specific date.
+        Get lineups for a specific date or current day if no date is provided.
         
-        Args:
-            date: Date in YYYY-MM-DD format
+        Query Parameters:
+            date (optional): Date in YYYY-MM-DD format. If not provided, returns current day's lineups.
         """
         try:
-            games = client.get_games_for_date(date)
-            return jsonify({
-                "success": True,
-                "date": date,
-                "games": games
-            })
-        except Exception as e:
-            logger.error(f"Error fetching games for date {date}: {e}", exc_info=True)
-            return jsonify({
-                "success": False,
-                "error": str(e)
-            }), 500
-    
-    @bp.route("/lineups/date/<date>", methods=["GET"])
-    def get_lineups_by_date(date: str):
-        """
-        Get lineups for a specific date.
-        
-        Args:
-            date: Date in YYYY-MM-DD format
-        """
-        try:
+            date = request.args.get("date")
             lineups = client.get_lineups_by_date(date)
-            return jsonify({
+            response_data = {
                 "success": True,
-                "date": date,
                 "data": lineups
-            })
+            }
+            if date:
+                response_data["date"] = date
+            return jsonify(response_data)
         except Exception as e:
-            logger.error(f"Error fetching lineups for date {date}: {e}", exc_info=True)
-            return jsonify({
-                "success": False,
-                "error": str(e)
-            }), 500
-    
-    @bp.route("/lineups/game/<game_id>", methods=["GET"])
-    def get_lineups_for_game(game_id: str):
-        """
-        Get lineups for a specific game.
-        
-        Args:
-            game_id: Game identifier
-        """
-        try:
-            lineups = client.get_lineups_for_game(game_id)
-            return jsonify({
-                "success": True,
-                "game_id": game_id,
-                "data": lineups
-            })
-        except Exception as e:
-            logger.error(f"Error fetching lineups for game {game_id}: {e}", exc_info=True)
+            logger.error(f"Error fetching lineups for date {date or 'current day'}: {e}", exc_info=True)
             return jsonify({
                 "success": False,
                 "error": str(e)

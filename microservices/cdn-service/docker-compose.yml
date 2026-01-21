@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  cdn-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cdn-service
+    ports:
+      - "${APP_PORT:-8002}:8002"
+    command: python run.py

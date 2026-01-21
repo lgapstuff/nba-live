@@ -1,0 +1,490 @@
+{
+	"info": {
+		"_postman_id": "cdn-service-api-collection",
+		"name": "CDN Service API",
+		"description": "Collection of endpoints for the CDN microservice (NBA API)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"item": [
+				{
+					"name": "Root Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								""
+							]
+						},
+						"description": "Root endpoint health check"
+					},
+					"response": []
+				},
+				{
+					"name": "API Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"health"
+							]
+						},
+						"description": "Health check endpoint for the CDN service"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints to check the health status of the service"
+		},
+		{
+			"name": "Players",
+			"item": [
+				{
+					"name": "Get Player Game Log",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/players/{{player_id}}/game-log?season={{season}}&season_type={{season_type}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"players",
+								"{{player_id}}",
+								"game-log"
+							],
+							"query": [
+								{
+									"key": "season",
+									"value": "{{season}}",
+									"description": "Season year (e.g., 2023-24)",
+									"disabled": true
+								},
+								{
+									"key": "season_type",
+									"value": "{{season_type}}",
+									"description": "Season type (Regular Season, Playoffs, etc.)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get game log for a specific player"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Player Last N Games",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/players/{{player_id}}/last-games?n={{n}}&season={{season}}&season_type={{season_type}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"players",
+								"{{player_id}}",
+								"last-games"
+							],
+							"query": [
+								{
+									"key": "n",
+									"value": "{{n}}",
+									"description": "Number of games to retrieve (default: 10)",
+									"disabled": true
+								},
+								{
+									"key": "season",
+									"value": "{{season}}",
+									"description": "Season year (e.g., 2023-24)",
+									"disabled": true
+								},
+								{
+									"key": "season_type",
+									"value": "{{season_type}}",
+									"description": "Season type (Regular Season, Playoffs, etc.)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get last N games for a specific player"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Player Profile",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/players/{{player_id}}/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"players",
+								"{{player_id}}",
+								"profile"
+							]
+						},
+						"description": "Get player profile details (height, weight, age, etc.)"
+					},
+					"response": []
+				},
+				{
+					"name": "Find Player by Name",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/players/find-by-name?name={{player_name}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"players",
+								"find-by-name"
+							],
+							"query": [
+								{
+									"key": "name",
+									"value": "{{player_name}}",
+									"description": "Player name to search for"
+								}
+							]
+						},
+						"description": "Find NBA player ID by name"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints related to NBA players"
+		},
+		{
+			"name": "Teams",
+			"item": [
+				{
+					"name": "Get Team Players",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/teams/{{team_abbr}}/players?season={{season}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"teams",
+								"{{team_abbr}}",
+								"players"
+							],
+							"query": [
+								{
+									"key": "season",
+									"value": "{{season}}",
+									"description": "Season year (e.g., 2023-24)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get all players for a specific team"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints related to NBA teams"
+		},
+		{
+			"name": "Games",
+			"item": [
+				{
+					"name": "Get Game Boxscore",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/games/{{game_id}}/boxscore?player_ids={{player_ids}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"games",
+								"{{game_id}}",
+								"boxscore"
+							],
+							"query": [
+								{
+									"key": "player_ids",
+									"value": "{{player_ids}}",
+									"description": "Comma-separated list of player IDs to filter (optional)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get live boxscore for a game"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Game Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/games/{{game_id}}/status?game_date={{game_date}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"games",
+								"{{game_id}}",
+								"status"
+							],
+							"query": [
+								{
+									"key": "game_date",
+									"value": "{{game_date}}",
+									"description": "Game date in YYYY-MM-DD format (optional)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get live status for a game (period/clock)"
+					},
+					"response": []
+				},
+				{
+					"name": "Find Game ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/games/find-game-id?home_team={{home_team}}&away_team={{away_team}}&game_date={{game_date}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"games",
+								"find-game-id"
+							],
+							"query": [
+								{
+									"key": "home_team",
+									"value": "{{home_team}}",
+									"description": "Home team abbreviation (required)"
+								},
+								{
+									"key": "away_team",
+									"value": "{{away_team}}",
+									"description": "Away team abbreviation (required)"
+								},
+								{
+									"key": "game_date",
+									"value": "{{game_date}}",
+									"description": "Game date in YYYY-MM-DD format (optional)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Find NBA GameID by teams and date"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints related to NBA games"
+		},
+		{
+			"name": "CDN Endpoints",
+			"item": [
+				{
+					"name": "Get Today's Scoreboard",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/cdn/scoreboard/today",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"cdn",
+								"scoreboard",
+								"today"
+							]
+						},
+						"description": "Get today's live scoreboard from NBA CDN"
+					},
+					"response": []
+				},
+				{
+					"name": "Get CDN Boxscore",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/cdn/boxscore/{{game_id}}?t={{cache_bust}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"cdn",
+								"boxscore",
+								"{{game_id}}"
+							],
+							"query": [
+								{
+									"key": "t",
+									"value": "{{cache_bust}}",
+									"description": "Cache bust parameter (optional)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get live boxscore from NBA CDN for a specific game"
+					},
+					"response": []
+				},
+				{
+					"name": "Get CDN Play-by-Play",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/cdn/playbyplay/{{game_id}}?t={{cache_bust}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"cdn",
+								"playbyplay",
+								"{{game_id}}"
+							],
+							"query": [
+								{
+									"key": "t",
+									"value": "{{cache_bust}}",
+									"description": "Cache bust parameter (optional)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get live play-by-play from NBA CDN for a specific game"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints that fetch data directly from NBA CDN"
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8002",
+			"type": "string"
+		},
+		{
+			"key": "player_id",
+			"value": "201939",
+			"type": "string",
+			"description": "Example: Stephen Curry's player ID"
+		},
+		{
+			"key": "player_name",
+			"value": "Stephen Curry",
+			"type": "string"
+		},
+		{
+			"key": "team_abbr",
+			"value": "GSW",
+			"type": "string",
+			"description": "Team abbreviation (e.g., GSW, LAL, BOS)"
+		},
+		{
+			"key": "game_id",
+			"value": "0022301234",
+			"type": "string",
+			"description": "NBA game ID"
+		},
+		{
+			"key": "home_team",
+			"value": "GSW",
+			"type": "string"
+		},
+		{
+			"key": "away_team",
+			"value": "LAL",
+			"type": "string"
+		},
+		{
+			"key": "game_date",
+			"value": "2024-01-15",
+			"type": "string",
+			"description": "Date in YYYY-MM-DD format"
+		},
+		{
+			"key": "season",
+			"value": "2023-24",
+			"type": "string"
+		},
+		{
+			"key": "season_type",
+			"value": "Regular Season",
+			"type": "string"
+		},
+		{
+			"key": "n",
+			"value": "10",
+			"type": "string",
+			"description": "Number of games"
+		},
+		{
+			"key": "player_ids",
+			"value": "201939,2544",
+			"type": "string",
+			"description": "Comma-separated player IDs"
+		},
+		{
+			"key": "cache_bust",
+			"value": "1234567890",
+			"type": "string"
+		}
+	]
+}

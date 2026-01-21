@@ -1,26 +1,6 @@
 version: '3.8'
 
 services:
-  # Shared MySQL database (same as main API)
-  mysql:
-    image: mysql:8.0
-    container_name: fantasynerds-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-nba_edge}
-      MYSQL_USER: ${MYSQL_USER:-nba_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-nba_password}
-    ports:
-      - "${MYSQL_PORT:-3306}:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # FantasyNerds microservice
   fantasynerds-service:
     build:
       context: .
@@ -28,16 +8,8 @@ services:
     container_name: fantasynerds-service
     ports:
       - "${APP_PORT:-8001}:8001"
-    env_file:
-      - .env
     environment:
       - FLASK_APP=app.main:create_app
-      - FLASK_ENV=${FLASK_ENV:-development}
-      - MYSQL_HOST=mysql
-    depends_on:
-      mysql:
-        condition: service_healthy
+      - FANTASYNERDS_API_KEY=N6CBJDANYZPPTZHMWAVT
+      - FANTASYNERDS_BASE_URL=https://api.fantasynerds.com
     command: python run.py
-
-volumes:
-  mysql_data:

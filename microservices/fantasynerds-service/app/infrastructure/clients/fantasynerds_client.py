@@ -4,7 +4,7 @@ FantasyNerds HTTP client - Direct integration with FantasyNerds API.
 import requests
 import json
 import logging
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -26,56 +26,36 @@ class FantasyNerdsClient:
         self.api_key = api_key
         self.base_url = base_url
     
-    def get_games_for_date(self, date: str) -> List[Dict[str, Any]]:
-        """
-        Get games for a specific date.
-        
-        Args:
-            date: Date in YYYY-MM-DD format
-            
-        Returns:
-            List of game dictionaries
-        """
-        # Stub implementation - implement if needed
-        return []
-    
-    def get_lineups_for_game(self, game_id: str) -> Dict[str, Any]:
-        """
-        Get lineups for a specific game.
-        
-        Args:
-            game_id: Game identifier
-            
-        Returns:
-            Dictionary with lineup information
-        """
-        # Stub implementation - implement if needed
-        return {}
-    
-    def get_lineups_by_date(self, date: str) -> Dict[str, Any]:
+    def get_lineups_by_date(self, date: str = None) -> Dict[str, Any]:
         """
         Get lineups for a specific date from FantasyNerds API.
+        If no date is provided, returns lineups for the current day.
         
         Args:
-            date: Date in YYYY-MM-DD format (will be converted to YYYYMMDD)
+            date: Optional date in YYYY-MM-DD format (will be converted to YYYYMMDD).
+                 If None, returns current day's lineups.
             
         Returns:
             Dictionary with lineup information
         """
         try:
-            # Convert date format from YYYY-MM-DD to YYYYMMDD
-            if '-' in date:
-                date_formatted = date.replace('-', '')
-            else:
-                date_formatted = date
-            
             url = f"{self.base_url}/v1/nba/lineups"
             params = {
-                'apikey': self.api_key,
-                'date': date_formatted
+                'apikey': self.api_key
             }
             
-            logger.info(f"[FANTASYNERDS] REQUEST: Fetching lineups for date: {date_formatted}")
+            # Only add date parameter if provided
+            if date:
+                # Convert date format from YYYY-MM-DD to YYYYMMDD
+                if '-' in date:
+                    date_formatted = date.replace('-', '')
+                else:
+                    date_formatted = date
+                params['date'] = date_formatted
+                logger.info(f"[FANTASYNERDS] REQUEST: Fetching lineups for date: {date_formatted}")
+            else:
+                logger.info(f"[FANTASYNERDS] REQUEST: Fetching lineups for current day")
+            
             logger.info(f"[FANTASYNERDS] REQUEST URL: {url}")
             logger.debug(f"[FANTASYNERDS] REQUEST PARAMS: {params}")
             response = requests.get(url, params=params, timeout=10)
