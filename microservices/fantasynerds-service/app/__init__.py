@@ -1,3 +1,0 @@
-"""
-FantasyNerds Microservice
-"""

@@ -18,7 +18,12 @@ class NBAClient(NBAPort):
     This client now calls the internal NBA API microservice instead of using nba_api library directly.
     """
     
-    def __init__(self, service_url: str = "http://nba-api-service:8002", request_timeout_seconds: float = 30.0):
+    def __init__(
+        self,
+        service_url: str = "http://nba-api-service:8002",
+        request_timeout_seconds: float = 30.0,
+        api_prefix: str = "/api/v1/nba"
+    ):
         """
         Initialize the client.
         
@@ -28,6 +33,11 @@ class NBAClient(NBAPort):
         """
         self.service_url = service_url.rstrip('/')
         self.request_timeout_seconds = float(request_timeout_seconds)
+        api_prefix = api_prefix.strip()
+        if not api_prefix.startswith("/"):
+            api_prefix = f"/{api_prefix}"
+        self.api_prefix = api_prefix.rstrip("/")
+        self.base_url = f"{self.service_url}{self.api_prefix}"
         self._player_id_cache = {}  # Cache for player name -> NBA player_id mapping
     
     def get_player_game_log(self, player_id: int, season: Optional[str] = None, 
@@ -44,7 +54,7 @@ class NBAClient(NBAPort):
             List of game dictionaries with player statistics
         """
         try:
-            url = f"{self.service_url}/api/v1/players/{player_id}/game-log"
+            url = f"{self.base_url}/players/{player_id}/game-log"
             params = {}
             if season:
                 params['season'] = season
@@ -103,7 +113,7 @@ class NBAClient(NBAPort):
             if player_name in self._player_id_cache:
                 return self._player_id_cache[player_name]
             
-            url = f"{self.service_url}/api/v1/players/find-by-name"
+            url = f"{self.base_url}/players/find-by-name"
             params = {'name': player_name}
             
             logger.info(f"[NBA API SERVICE] REQUEST: Finding player ID for {player_name}")
@@ -143,7 +153,7 @@ class NBAClient(NBAPort):
             List of the last N games, ordered by most recent first
         """
         try:
-            url = f"{self.service_url}/api/v1/players/{player_id}/last-games"
+            url = f"{self.base_url}/players/{player_id}/last-games"
             params = {'n': n}
             if season:
                 params['season'] = season
@@ -184,7 +194,7 @@ class NBAClient(NBAPort):
             - team_abbreviation: Team abbreviation
         """
         try:
-            url = f"{self.service_url}/api/v1/teams/{team_abbr}/players"
+            url = f"{self.base_url}/teams/{team_abbr}/players"
             params = {}
             if season:
                 params['season'] = season
@@ -210,7 +220,7 @@ class NBAClient(NBAPort):
         Get player profile details (height, weight, age, etc.) from NBA API microservice.
         """
         try:
-            url = f"{self.service_url}/api/v1/players/{player_id}/profile"
+            url = f"{self.base_url}/players/{player_id}/profile"
             logger.info(f"[NBA API SERVICE] REQUEST: Fetching profile for player {player_id}")
             response = requests.get(url, timeout=self.request_timeout_seconds)
             response.raise_for_status()
@@ -238,7 +248,7 @@ class NBAClient(NBAPort):
             Dictionary with live statistics for each player
         """
         try:
-            url = f"{self.service_url}/api/v1/games/{game_id}/boxscore"
+            url = f"{self.base_url}/games/{game_id}/boxscore"
             params = None
             if player_ids:
                 params = {'player_ids': ','.join(map(str, player_ids))}
@@ -312,7 +322,7 @@ class NBAClient(NBAPort):
                 # Fallback: use game_date as-is if it's already a string
                 dates_to_try.append(str(game_date))
             
-            url = f"{self.service_url}/api/v1/games/find-game-id"
+            url = f"{self.base_url}/games/find-game-id"
             params = {
                 'home_team': home_team_abbr,
                 'away_team': away_team_abbr

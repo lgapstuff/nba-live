@@ -45,6 +45,23 @@ class LineupService:
         self.game_repository = game_repository
         self.game_log_repository = game_log_repository
 
+    @staticmethod
+    def _normalize_team_abbr(team_abbr: str) -> str:
+        """
+        Normalize team abbreviation to a canonical NBA format.
+        This is required to match FantasyNerds abbreviations with schedule data.
+        """
+        if not team_abbr:
+            return ""
+        abbr = team_abbr.upper().strip()
+        return {
+            "PHO": "PHX",
+            "GS": "GSW",
+            "SA": "SAS",
+            "NO": "NOP",
+            "NY": "NYK",
+        }.get(abbr, abbr)
+
     def _update_game_log_lineup_info(self, player_id: int, lineup_date: str,
                                      start_position: Optional[str],
                                      starter_status: str) -> None:
@@ -124,6 +141,14 @@ class LineupService:
             
             lineup_date = lineups_data.get('lineup_date', date)
             lineups = lineups_data.get('lineups', {})
+            if lineups:
+                normalized_lineups = {}
+                for team_abbr, team_lineup in lineups.items():
+                    normalized_abbr = self._normalize_team_abbr(team_abbr)
+                    # Prefer existing entry if already normalized
+                    if normalized_abbr not in normalized_lineups:
+                        normalized_lineups[normalized_abbr] = team_lineup
+                lineups = normalized_lineups
             
             # If no games found for the exact date, try to find games by matching teams
             # This handles cases where lineups are published for a date but games might be on a different date
@@ -673,7 +698,8 @@ class LineupService:
                 logger.debug(f"[LINEUP] This means rosters need to be imported. Check if depth_chart_service has rosters: {self.depth_chart_service.has_depth_charts() if hasattr(self.depth_chart_service, 'has_depth_charts') else 'N/A'}")
             
             # Get lineup from FantasyNerds for this team
-            fantasy_lineup = team_lineups.get(team_abbr, {})
+            lookup_abbr = self._normalize_team_abbr(team_abbr)
+            fantasy_lineup = team_lineups.get(lookup_abbr, {})
             
             if not fantasy_lineup:
                 logger.warning(f"[LINEUP] No FantasyNerds lineup found for team {team_abbr}, skipping")

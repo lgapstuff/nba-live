@@ -1,0 +1,8 @@
+version: '3.8'
+
+services:
+  api:
+    environment:
+      - FANTASYNERDS_SERVICE_URL=https://api-nba-fantasynerds.bravewater-0444722a.centralus.azurecontainerapps.io
+      - NBA_API_SERVICE_URL=https://api-nba-cdn.bravewater-0444722a.centralus.azurecontainerapps.io
+      - ODDS_API_SERVICE_URL=https://api-nba-odds.bravewater-0444722a.centralus.azurecontainerapps.io

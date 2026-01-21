@@ -22,8 +22,11 @@ class Config:
     
     # Microservices URLs
     FANTASYNERDS_SERVICE_URL: str = os.getenv("FANTASYNERDS_SERVICE_URL", "http://fantasynerds-service:8001")
+    FANTASYNERDS_SERVICE_PREFIX: str = os.getenv("FANTASYNERDS_SERVICE_PREFIX", "/api/v1/fantasynerds")
     NBA_API_SERVICE_URL: str = os.getenv("NBA_API_SERVICE_URL", "http://nba-api-service:8002")
+    NBA_API_SERVICE_PREFIX: str = os.getenv("NBA_API_SERVICE_PREFIX", "/api/v1/nba")
     ODDS_API_SERVICE_URL: str = os.getenv("ODDS_API_SERVICE_URL", "http://odds-api-service:8003")
+    ODDS_API_SERVICE_PREFIX: str = os.getenv("ODDS_API_SERVICE_PREFIX", "/api/v1/odds")
 
     # NBA API request/timeouts
     NBA_API_REQUEST_TIMEOUT_SECONDS: float = float(os.getenv("NBA_API_REQUEST_TIMEOUT_SECONDS", "60"))

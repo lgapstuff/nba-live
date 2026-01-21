@@ -17,7 +17,11 @@ class OddsAPIClient(OddsAPIPort):
     This client now calls the internal Odds API microservice instead of the external API directly.
     """
     
-    def __init__(self, service_url: str = "http://odds-api-service:8003"):
+    def __init__(
+        self,
+        service_url: str = "http://odds-api-service:8003",
+        api_prefix: str = "/api/v1/odds"
+    ):
         """
         Initialize the client.
         
@@ -25,6 +29,11 @@ class OddsAPIClient(OddsAPIPort):
             service_url: Base URL for the Odds API microservice
         """
         self.service_url = service_url.rstrip('/')
+        api_prefix = api_prefix.strip()
+        if not api_prefix.startswith("/"):
+            api_prefix = f"/{api_prefix}"
+        self.api_prefix = api_prefix.rstrip("/")
+        self.base_url = f"{self.service_url}{self.api_prefix}"
 
     @staticmethod
     def _log_request(method: str, url: str, params: Optional[Dict[str, Any]] = None) -> None:
@@ -46,7 +55,7 @@ class OddsAPIClient(OddsAPIPort):
             List of event dictionaries
         """
         try:
-            url = f"{self.service_url}/api/v1/events"
+            url = f"{self.base_url}/events"
             params = {'sport': sport}
             
             logger.info(f"[ODDS API SERVICE] REQUEST: Fetching events for sport: {sport}")
@@ -89,7 +98,7 @@ class OddsAPIClient(OddsAPIPort):
             Dictionary with odds information (only FanDuel bookmaker)
         """
         try:
-            url = f"{self.service_url}/api/v1/events/{event_id}/odds"
+            url = f"{self.base_url}/events/{event_id}/odds"
             params = {
                 'regions': regions,
                 'markets': markets,
@@ -129,7 +138,7 @@ class OddsAPIClient(OddsAPIPort):
             List of score dictionaries
         """
         try:
-            url = f"{self.service_url}/api/v1/scores"
+            url = f"{self.base_url}/scores"
             params = {
                 'sport': sport,
                 'days_from': days_from

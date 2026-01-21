@@ -251,12 +251,17 @@ Respuesta:
    cp .env.example .env
    ```
 
-2. Build and run with Docker Compose:
+2. Run in local mode (builds the microservices from sibling repos):
    ```bash
-   docker-compose up --build
+   docker compose --profile local up --build
    ```
 
-3. Test the health endpoint:
+3. Run in dev mode (uses cloud microservices):
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+   ```
+
+4. Test the health endpoint:
    ```bash
    curl http://localhost:8000/health
    ```

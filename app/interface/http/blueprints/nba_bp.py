@@ -34,8 +34,14 @@ game_repository = GameRepository(db_connection)
 lineup_repository = LineupRepository(db_connection)
 odds_history_repository = OddsHistoryRepository(db_connection)
 # Initialize clients to consume microservices
-fantasynerds_client = FantasyNerdsClient(config.FANTASYNERDS_SERVICE_URL)
-odds_api_client = OddsAPIClient(config.ODDS_API_SERVICE_URL)
+fantasynerds_client = FantasyNerdsClient(
+    config.FANTASYNERDS_SERVICE_URL,
+    api_prefix=config.FANTASYNERDS_SERVICE_PREFIX
+)
+odds_api_client = OddsAPIClient(
+    config.ODDS_API_SERVICE_URL,
+    api_prefix=config.ODDS_API_SERVICE_PREFIX
+)
 
 # Initialize NBA API client (now consumes microservice)
 nba_client = None
@@ -44,7 +50,8 @@ game_log_service = None
 try:
     nba_client = NBAClient(
         config.NBA_API_SERVICE_URL,
-        request_timeout_seconds=config.NBA_API_REQUEST_TIMEOUT_SECONDS
+        request_timeout_seconds=config.NBA_API_REQUEST_TIMEOUT_SECONDS,
+        api_prefix=config.NBA_API_SERVICE_PREFIX
     )
     # Initialize game log repository and service
     game_log_repository = GameLogRepository(db_connection)
@@ -497,7 +504,8 @@ def get_cdn_scoreboard():
     Get today's live scoreboard from NBA CDN (via NBA API microservice).
     """
     try:
-        url = f"{config.NBA_API_SERVICE_URL}/api/v1/cdn/scoreboard/today"
+        base_url = f"{config.NBA_API_SERVICE_URL.rstrip('/')}{config.NBA_API_SERVICE_PREFIX}"
+        url = f"{base_url}/cdn/scoreboard/today"
         response = requests.get(url, timeout=10)
         return jsonify(response.json()), response.status_code
     except Exception as e:
@@ -516,7 +524,8 @@ def get_cdn_boxscore(game_id: str):
     Get live boxscore from NBA CDN (via NBA API microservice).
     """
     try:
-        url = f"{config.NBA_API_SERVICE_URL}/api/v1/cdn/boxscore/{game_id}"
+        base_url = f"{config.NBA_API_SERVICE_URL.rstrip('/')}{config.NBA_API_SERVICE_PREFIX}"
+        url = f"{base_url}/cdn/boxscore/{game_id}"
         response = requests.get(url, timeout=10)
         return jsonify(response.json()), response.status_code
     except Exception as e:
@@ -535,7 +544,8 @@ def get_cdn_playbyplay(game_id: str):
     Get live play-by-play from NBA CDN (via NBA API microservice).
     """
     try:
-        url = f"{config.NBA_API_SERVICE_URL}/api/v1/cdn/playbyplay/{game_id}"
+        base_url = f"{config.NBA_API_SERVICE_URL.rstrip('/')}{config.NBA_API_SERVICE_PREFIX}"
+        url = f"{base_url}/cdn/playbyplay/{game_id}"
         response = requests.get(url, timeout=10)
         return jsonify(response.json()), response.status_code
     except Exception as e:

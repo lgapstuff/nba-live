@@ -18,7 +18,11 @@ class FantasyNerdsClient(FantasyNerdsPort):
     This client now calls the internal FantasyNerds microservice instead of the external API directly.
     """
     
-    def __init__(self, service_url: str = "http://fantasynerds-service:8001"):
+    def __init__(
+        self,
+        service_url: str = "http://fantasynerds-service:8001",
+        api_prefix: str = "/api/v1/fantasynerds"
+    ):
         """
         Initialize the client.
         
@@ -26,6 +30,11 @@ class FantasyNerdsClient(FantasyNerdsPort):
             service_url: Base URL for the FantasyNerds microservice
         """
         self.service_url = service_url.rstrip('/')
+        api_prefix = api_prefix.strip()
+        if not api_prefix.startswith("/"):
+            api_prefix = f"/{api_prefix}"
+        self.api_prefix = api_prefix.rstrip("/")
+        self.base_url = f"{self.service_url}{self.api_prefix}"
     
     def get_games_for_date(self, date: str) -> List[Dict[str, Any]]:
         """
@@ -64,7 +73,7 @@ class FantasyNerdsClient(FantasyNerdsPort):
             Dictionary with lineup information
         """
         try:
-            url = f"{self.service_url}/api/v1/lineups/date/{date}"
+            url = f"{self.base_url}/lineups/date/{date}"
             logger.info(f"[FANTASYNERDS SERVICE] REQUEST: Fetching lineups for date: {date}")
             logger.info(f"[FANTASYNERDS SERVICE] REQUEST URL: {url}")
             
@@ -96,7 +105,7 @@ class FantasyNerdsClient(FantasyNerdsPort):
             Format: {"season": 2021, "charts": {"SA": {...}, "DEN": {...}, ...}}
         """
         try:
-            url = f"{self.service_url}/api/v1/depth-charts"
+            url = f"{self.base_url}/depth-charts"
             logger.info(f"[FANTASYNERDS SERVICE] REQUEST: Fetching depth charts")
             logger.info(f"[FANTASYNERDS SERVICE] REQUEST URL: {url}")
             

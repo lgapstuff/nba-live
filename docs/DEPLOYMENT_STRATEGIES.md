@@ -188,10 +188,10 @@ ODDS_API_SERVICE_PORT=8003
 FANTASYNERDS_API_KEY=tu_api_key
 THE_ODDS_API_KEY=tu_api_key
 
-# Service URLs (internas, no cambiar)
-FANTASYNERDS_SERVICE_URL=http://fantasynerds-service:8001
-NBA_API_SERVICE_URL=http://nba-api-service:8002
-ODDS_API_SERVICE_URL=http://odds-api-service:8003
+# Service URLs (cloud)
+FANTASYNERDS_SERVICE_URL=https://api-nba-fantasynerds.bravewater-0444722a.centralus.azurecontainerapps.io
+NBA_API_SERVICE_URL=https://api-nba-cdn.bravewater-0444722a.centralus.azurecontainerapps.io
+ODDS_API_SERVICE_URL=https://api-nba-odds.bravewater-0444722a.centralus.azurecontainerapps.io
 ```
 
 ### Paso 4: Modificar docker-compose.yml para Producción
@@ -292,9 +292,9 @@ services:
       - FLASK_APP=app.main:create_app
       - FLASK_ENV=production
       - MYSQL_HOST=mysql
-      - FANTASYNERDS_SERVICE_URL=http://fantasynerds-service:8001
-      - NBA_API_SERVICE_URL=http://nba-api-service:8002
-      - ODDS_API_SERVICE_URL=http://odds-api-service:8003
+      - FANTASYNERDS_SERVICE_URL=https://api-nba-fantasynerds.bravewater-0444722a.centralus.azurecontainerapps.io
+      - NBA_API_SERVICE_URL=https://api-nba-cdn.bravewater-0444722a.centralus.azurecontainerapps.io
+      - ODDS_API_SERVICE_URL=https://api-nba-odds.bravewater-0444722a.centralus.azurecontainerapps.io
     depends_on:
       mysql:
         condition: service_healthy

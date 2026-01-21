@@ -1,3 +1,0 @@
-"""
-Odds API Microservice
-"""

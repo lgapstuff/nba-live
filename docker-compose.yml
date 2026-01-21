@@ -25,9 +25,11 @@ services:
   # FantasyNerds Microservice
   fantasynerds-service:
     build:
-      context: ./microservices/fantasynerds-service
+      context: ../Gleam.Cloud.Ms.Nba.Fantasynerds
       dockerfile: Dockerfile
     container_name: fantasynerds-service
+    profiles:
+      - local
     ports:
       - "${FANTASYNERDS_SERVICE_PORT:-8001}:8001"
     env_file:
@@ -47,9 +49,11 @@ services:
   # NBA API Microservice
   nba-api-service:
     build:
-      context: ./microservices/nba-api-service
+      context: ../Gleam.Cloud.Ms.Nba.Cdn
       dockerfile: Dockerfile
     container_name: nba-api-service
+    profiles:
+      - local
     ports:
       - "${NBA_API_SERVICE_PORT:-8002}:8002"
     env_file:
@@ -69,9 +73,11 @@ services:
   # Odds API Microservice
   odds-api-service:
     build:
-      context: ./microservices/odds-api-service
+      context: ../Gleam.Cloud.Ms.Nba.Odds
       dockerfile: Dockerfile
     container_name: odds-api-service
+    profiles:
+      - local
     ports:
       - "${ODDS_API_SERVICE_PORT:-8003}:8003"
     env_file:
@@ -106,18 +112,15 @@ services:
       - FLASK_APP=app.main:create_app
       - FLASK_ENV=${FLASK_ENV:-development}
       - MYSQL_HOST=mysql
-      - FANTASYNERDS_SERVICE_URL=http://fantasynerds-service:8001
-      - NBA_API_SERVICE_URL=http://nba-api-service:8002
-      - ODDS_API_SERVICE_URL=http://odds-api-service:8003
+      - FANTASYNERDS_SERVICE_URL=${FANTASYNERDS_SERVICE_URL:-http://fantasynerds-service:8001}
+      - FANTASYNERDS_SERVICE_PREFIX=${FANTASYNERDS_SERVICE_PREFIX:-/api/v1/fantasynerds}
+      - NBA_API_SERVICE_URL=${NBA_API_SERVICE_URL:-http://nba-api-service:8002}
+      - NBA_API_SERVICE_PREFIX=${NBA_API_SERVICE_PREFIX:-/api/v1/nba}
+      - ODDS_API_SERVICE_URL=${ODDS_API_SERVICE_URL:-http://odds-api-service:8003}
+      - ODDS_API_SERVICE_PREFIX=${ODDS_API_SERVICE_PREFIX:-/api/v1/odds}
     depends_on:
       mysql:
         condition: service_healthy
-      fantasynerds-service:
-        condition: service_started
-      nba-api-service:
-        condition: service_started
-      odds-api-service:
-        condition: service_started
     networks:
       - nba-network
     command: python run.py

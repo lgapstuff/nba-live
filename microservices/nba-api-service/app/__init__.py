@@ -1,3 +1,0 @@
-"""
-NBA API Microservice
-"""
