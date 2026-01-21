@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../.."
+		},
+		{
+			"path": "../../../../Gleam.Cloud.Ms.Nba.Cdn"
+		},
+		{
+			"path": "../../../../Gleam.Cloud.Ms.Nba.Fantasynerds"
+		},
+		{
+			"path": "../../../../Gleam.Cloud.Ms.Nba.Odds"
+		}
+	]
+}

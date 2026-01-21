@@ -1,6 +1,6 @@
 <template>
   <main class="app">
-    <section class="app__content" :class="activeMainTab === 'live-follow' ? 'app__content--playbyplay' : 'app__content--single'">
+  <section class="app__content" :class="showPlayByPlayPanel ? 'app__content--playbyplay' : 'app__content--single'">
       <div class="app__main">
         <nav class="top-nav" aria-label="Primary">
           <button
@@ -86,8 +86,8 @@
         </section>
       </div>
 
-      <aside v-if="activeMainTab === 'live-follow'" class="playbyplay-panel">
-        <div v-if="liveFollowGameOptions.length" class="playbyplay-game-tabs">
+      <aside v-if="showPlayByPlayPanel" class="playbyplay-panel">
+        <div v-if="activeMainTab === 'live-follow' && liveFollowGameOptions.length" class="playbyplay-game-tabs">
           <button
             v-for="game in liveFollowGameOptions"
             :key="game.gameId"
@@ -292,6 +292,45 @@ const persistLineupsCache = (cache) => {
   }
 };
 
+const lineupHasStarters = (lineup) => {
+  if (!lineup?.lineups) {
+    return false;
+  }
+  return Object.values(lineup.lineups).some((teamLineup) => {
+    if (!teamLineup) {
+      return false;
+    }
+    return ["PG", "SG", "SF", "PF", "C"].some((position) => {
+      const player = teamLineup[position];
+      if (!player) {
+        return false;
+      }
+      return Boolean(
+        player.player_id
+        || player.playerId
+        || player.player_name
+        || player.playerName
+        || player.name
+      );
+    });
+  });
+};
+
+const upsertLineupCache = (dateKey, lineupEntry) => {
+  if (!dateKey || !lineupEntry?.game_id) {
+    return;
+  }
+  const cache = lineupsCache.value[dateKey] || [];
+  const index = cache.findIndex((item) => String(item.game_id) === String(lineupEntry.game_id));
+  if (index >= 0) {
+    cache[index] = lineupEntry;
+  } else {
+    cache.push(lineupEntry);
+  }
+  lineupsCache.value[dateKey] = cache;
+  persistLineupsCache(lineupsCache.value);
+};
+
 const selectedGame = ref(null);
 const selectedGameId = ref("");
 const activeMainTab = ref("games");
@@ -444,6 +483,9 @@ const handleGameSelect = async (game) => {
     let match = cachedLineups.length
       ? findLineupForTeams(cachedLineups, game.homeTricode, game.awayTricode)
       : null;
+    if (match?.lineups && !lineupHasStarters(match)) {
+      match = null;
+    }
     if (!match?.lineups) {
       const fallbackDate = resolveGameDate(game);
       const resolved = await fetchLineupByTeams(
@@ -454,13 +496,10 @@ const handleGameSelect = async (game) => {
       if (resolved?.lineup?.lineups) {
         match = resolved.lineup;
         if (fallbackDate) {
-          const cache = lineupsCache.value[fallbackDate] || [];
-          const exists = cache.some((item) => String(item.game_id) === String(match.game_id));
-          if (!exists) {
-            cache.push(match);
-            lineupsCache.value[fallbackDate] = cache;
-            persistLineupsCache(lineupsCache.value);
-          }
+          upsertLineupCache(fallbackDate, match);
+        }
+        if (resolvedDate && resolvedDate !== fallbackDate) {
+          upsertLineupCache(resolvedDate, match);
         }
       }
     }
@@ -499,6 +538,9 @@ const handleGameSelect = async (game) => {
           away.teamTricode || gameData.awayTeam?.teamTricode
         );
       }
+    }
+    if (activeMainTab.value === "games" && shouldFetchBoxscore(game)) {
+      handleLoadPlayByPlay();
     }
   } catch (err) {
     lineupError.value = err?.message || "Error inesperado al cargar el lineup.";
@@ -964,7 +1006,12 @@ const liveFollowGroups = computed(() => {
       const items = followed
         .filter((item) => item?.statKey)
         .map((item) => {
-          const current = getFollowedCurrentValueFromStats(statsMap, item.playerId, item.statKey);
+          const current = getFollowedCurrentValueFromStats(
+            statsMap,
+            item.playerId,
+            item.statKey,
+            item.name
+          );
           const live = statsMap?.byId?.[item.playerId] || null;
           const isOnCourt = ["1", "true", true, 1].includes(live?.oncourt);
           const side = item.side === "under" ? "under" : item.side === "over" ? "over" : null;
@@ -1020,6 +1067,10 @@ const activePlayByPlayGame = computed(() => {
   }
   return selectedGame.value;
 });
+
+const showPlayByPlayPanel = computed(() => (
+  activeMainTab.value === "live-follow" || activeMainTab.value === "games"
+));
 
 watch(activeMainTab, (next) => {
   if (next === "live-follow") {
@@ -1151,8 +1202,10 @@ const playFollowBenchSound = () => {
   playFollowTone({ startFreq: 420, endFreq: 260, duration: 0.24, volume: FOLLOW_ALERT_VOLUME });
 };
 
-const getFollowedCurrentValue = (playerId, statKey) => {
-  const live = liveStats.value?.byId?.[playerId] || null;
+const getFollowedCurrentValue = (playerId, statKey, playerName) => {
+  const live = liveStats.value?.byId?.[playerId]
+    || (playerName ? liveStats.value?.byName?.[normalizeName(playerName)] : null)
+    || null;
   const current = statKey === "points"
     ? live?.pts
     : statKey === "rebounds"
@@ -1164,8 +1217,10 @@ const getFollowedCurrentValue = (playerId, statKey) => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
-const getFollowedCurrentValueFromStats = (statsMap, playerId, statKey) => {
-  const live = statsMap?.byId?.[playerId] || null;
+const getFollowedCurrentValueFromStats = (statsMap, playerId, statKey, playerName) => {
+  const live = statsMap?.byId?.[playerId]
+    || (playerName ? statsMap?.byName?.[normalizeName(playerName)] : null)
+    || null;
   const current = statKey === "points"
     ? live?.pts
     : statKey === "rebounds"
@@ -1193,7 +1248,7 @@ const checkFollowedUpdates = () => {
       return;
     }
     const key = `${player.playerId}-${player.statKey}`;
-    const current = getFollowedCurrentValue(player.playerId, player.statKey);
+    const current = getFollowedCurrentValue(player.playerId, player.statKey, player.name);
     if (current == null) {
       // still track on-court/line even if stat is missing
     } else {
@@ -1313,7 +1368,12 @@ const refreshLiveFollowData = async () => {
         return;
       }
       const key = `${game.gameId}-${player.playerId}-${player.statKey}`;
-      const current = getFollowedCurrentValueFromStats(statsMap, player.playerId, player.statKey);
+      const current = getFollowedCurrentValueFromStats(
+        statsMap,
+        player.playerId,
+        player.statKey,
+        player.name
+      );
       if (current == null) {
         return;
       }
@@ -1699,10 +1759,12 @@ const normalizeName = (value) => {
 };
 
 const getBoxscorePlayerName = (player) => {
-  if (player?.firstName || player?.lastName) {
-    return `${player?.firstName || ""} ${player?.lastName || ""}`.trim();
+  const hasFirst = Boolean(player?.firstName);
+  const hasLast = Boolean(player?.lastName);
+  if (!hasFirst || !hasLast) {
+    return player?.name || `${player?.firstName || ""} ${player?.lastName || ""}`.trim();
   }
-  return player?.name || "";
+  return `${player?.firstName || ""} ${player?.lastName || ""}`.trim();
 };
 
 const normalizeTeamTricode = (team) => {

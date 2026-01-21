@@ -690,7 +690,12 @@ class LineupService:
             
             for position, player_data in fantasy_lineup.items():
                 if position in ['PG', 'SG', 'SF', 'PF', 'C']:  # Only actual positions
-                    fantasy_player_name = player_data.get('name', '')
+                    fantasy_player_name = (
+                        player_data.get('name')
+                        or player_data.get('player_name')
+                        or player_data.get('playerName')
+                        or ''
+                    )
                     if not fantasy_player_name:
                         continue
                     
@@ -711,7 +716,12 @@ class LineupService:
                     else:
                         # No match found - log warning but still save with FantasyNerds data
                         logger.warning(f"[LINEUP] Could not find NBA roster match for STARTER {fantasy_player_name} from {team_abbr}")
-                        fantasy_player_id = int(player_data.get('playerId', 0))
+                        fantasy_player_id = int(
+                            player_data.get('playerId')
+                            or player_data.get('player_id')
+                            or player_data.get('playerID')
+                            or 0
+                        )
                         if fantasy_player_id > 0:
                             starter_players_by_position[position] = {
                                 'player_id': fantasy_player_id,  # Fallback to FantasyNerds ID
